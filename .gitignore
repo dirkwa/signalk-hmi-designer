@@ -1,0 +1,8 @@
+node_modules
+plugin
+public
+*.log
+.DS_Store
+.vite
+dist
+coverage
