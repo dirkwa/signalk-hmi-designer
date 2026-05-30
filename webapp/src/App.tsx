@@ -5,6 +5,7 @@ import 'react-resizable/css/styles.css'
 
 import { WidgetPreview } from './WidgetPreview'
 import { useSkValues } from './skStream'
+import { STATUS_OVERLAY_HEIGHT } from './schema'
 
 import {
   deriveDisplayDefaults,
@@ -127,6 +128,7 @@ export function App(): JSX.Element {
     title: 'Main',
     widgets: []
   })
+  const [statusOverlay, setStatusOverlay] = useState<boolean>(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
@@ -147,6 +149,9 @@ export function App(): JSX.Element {
         if (!saved) return
         const first = saved.screens[0]
         if (first) setScreen(first)
+        if (saved.status_overlay !== undefined) {
+          setStatusOverlay(saved.status_overlay)
+        }
       })
       .catch(() => {
         /* nothing to restore — leave the empty default */
@@ -154,8 +159,13 @@ export function App(): JSX.Element {
   }, [])
 
   const layoutDoc: Layout = useMemo(
-    () => ({ schema: 1, name: 'Designer', screens: [screen] }),
-    [screen]
+    () => ({
+      schema: 1,
+      name: 'Designer',
+      status_overlay: statusOverlay,
+      screens: [screen]
+    }),
+    [screen, statusOverlay]
   )
 
   // Canvas dimensions track the connected device's /hello.display
@@ -334,6 +344,17 @@ export function App(): JSX.Element {
           <button className="primary" onClick={() => void onPush()}>
             Push
           </button>
+          <label
+            className="topbar-toggle"
+            title="Show the device's status strip at top of screen"
+          >
+            <input
+              type="checkbox"
+              checked={statusOverlay}
+              onChange={(e) => setStatusOverlay(e.target.checked)}
+            />
+            status bar
+          </label>
         </div>
         <div className="topbar-status">
           {hello && (
@@ -504,6 +525,24 @@ export function App(): JSX.Element {
               backgroundSize: `${colPxW}px ${ROW_PX_H}px`
             }}
           >
+            {statusOverlay && (
+              <div
+                className="canvas-overlay"
+                style={{ height: `${STATUS_OVERLAY_HEIGHT}px` }}
+              >
+                <span>host · wifi · sk · n2k · uptime · heap</span>
+              </div>
+            )}
+            <div
+              className="canvas-content"
+              style={{
+                position: 'absolute',
+                top: statusOverlay ? STATUS_OVERLAY_HEIGHT : 0,
+                left: 0,
+                right: 0,
+                bottom: 0
+              }}
+            >
             <GridLayout
               className="grid"
               layout={grid}
@@ -557,6 +596,7 @@ export function App(): JSX.Element {
                 )
               })}
             </GridLayout>
+            </div>
           </div>
         </main>
 

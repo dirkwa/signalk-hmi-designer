@@ -80,9 +80,17 @@ export interface Screen {
 export interface Layout {
   schema: 1
   name: string
+  /** Show the device's status strip (hostname, wifi, sk, n2k, heap)
+   *  at the top of the screen. Default true (matches firmware
+   *  behavior since v0.1). Set false for a clean operational helm. */
+  status_overlay?: boolean
   theme?: { bg?: string; fg?: string; accent?: string }
   screens: Screen[]
 }
+
+/** Height in device pixels of the status overlay strip (matches the
+ *  firmware constant kStripHeight in status_overlay.cpp). */
+export const STATUS_OVERLAY_HEIGHT = 28
 
 /** Returned by the device's GET /hello — capability descriptor. */
 export interface HelloResponse {

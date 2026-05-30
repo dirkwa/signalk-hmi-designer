@@ -74,6 +74,38 @@ header {
 
 .topbar-hello code { color: var(--fg); }
 
+.topbar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  margin: 0;
+}
+.topbar-toggle input {
+  margin: 0;
+}
+
+/* Dummy status strip in the canvas — mirrors the device's
+   StatusOverlay so the designer's geometry stays honest. */
+.canvas-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  color: var(--muted);
+  z-index: 1;
+  pointer-events: none;
+}
+
 .cols {
   display: grid;
   grid-template-columns: 280px 1fr 320px;
