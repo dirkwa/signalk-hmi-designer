@@ -103,11 +103,21 @@ button.x { padding: 0 6px; font-size: 14px; }
 .hello { font-size: 12px; color: var(--muted); margin: 6px 0; }
 .hello code { color: var(--fg); }
 
+/* Layout JSON preview textarea — explicit color (some browsers default
+   textareas to a dark text on dark theme, which becomes unreadable on
+   our dark panel background). Sized generously since the user often
+   wants to copy the whole document out. */
 .json {
   font-family: ui-monospace, monospace;
   font-size: 11px;
-  min-height: 180px;
-  background: var(--bg);
+  min-height: 280px;
+  background: #0b0f14 !important;
+  color: var(--fg) !important;
+  white-space: pre;
+  overflow: auto;
+  line-height: 1.4;
+  padding: 8px !important;
+  resize: vertical;
 }
 
 .canvas {
@@ -154,6 +164,11 @@ button.x { padding: 0 6px; font-size: 14px; }
   padding: 2px 6px;
   font-size: 10px;
   color: var(--muted);
+  cursor: move;
+}
+
+.tile-body {
+  cursor: pointer;
 }
 
 .tile-kind { text-transform: uppercase; letter-spacing: 0.5px; }

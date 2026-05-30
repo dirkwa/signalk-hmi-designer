@@ -8,7 +8,9 @@ import {
   fetchHello,
   fetchPathMeta,
   fetchSelfPaths,
+  loadSavedLayout,
   pushLayout,
+  saveLayout,
   type PushResult
 } from './api'
 import { Layout, Screen, Widget, WidgetKind, HelloResponse } from './schema'
@@ -128,6 +130,22 @@ export function App(): JSX.Element {
       .catch(() => setPaths([]))
   }, [])
 
+  // Restore previously-saved layout on first mount. The saved doc
+  // wraps the screen we render; v1 only supports a single screen so
+  // we lift screens[0] out. Future versions need a screens-array
+  // state shape.
+  useEffect(() => {
+    void loadSavedLayout()
+      .then((saved) => {
+        if (!saved) return
+        const first = saved.screens[0]
+        if (first) setScreen(first)
+      })
+      .catch(() => {
+        /* nothing to restore — leave the empty default */
+      })
+  }, [])
+
   const layoutDoc: Layout = useMemo(
     () => ({ schema: 1, name: 'Designer', screens: [screen] }),
     [screen]
@@ -234,6 +252,17 @@ export function App(): JSX.Element {
     try {
       const r = await pushLayout(deviceUrl, layoutDoc)
       setPushResult(r)
+      // Persist on successful device push (not on validation failure).
+      // Save errors are non-fatal — surface but don't overwrite the
+      // push success message.
+      if (r.ok) {
+        try {
+          await saveLayout(layoutDoc)
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.warn('layout saved on device but failed to persist on SK:', e)
+        }
+      }
     } catch (e) {
       setPushErr(e instanceof Error ? e.message : String(e))
     }
@@ -327,18 +356,24 @@ export function App(): JSX.Element {
               width={1024}
               compactType={null}
               preventCollision={false}
+              // Only the tile-head bar is draggable. The body is free
+              // to receive clicks for selection.
+              draggableHandle=".tile-head"
               onLayoutChange={onLayoutChange}
             >
               {screen.widgets.map((w) => (
                 <div
                   key={w.id}
                   className={`tile ${selectedId === w.id ? 'sel' : ''}`}
-                  onClick={() => setSelectedId(w.id)}
                 >
-                  <div className="tile-head">
+                  <div
+                    className="tile-head"
+                    onMouseDown={() => setSelectedId(w.id)}
+                  >
                     <span className="tile-kind">{w.type}</span>
                     <button
                       className="x"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         removeWidget(w.id)
@@ -347,7 +382,10 @@ export function App(): JSX.Element {
                       ×
                     </button>
                   </div>
-                  <div className="tile-body">
+                  <div
+                    className="tile-body"
+                    onClick={() => setSelectedId(w.id)}
+                  >
                     <div>{w.label ?? w.id}</div>
                     {w.bind && <code>{w.bind}</code>}
                   </div>

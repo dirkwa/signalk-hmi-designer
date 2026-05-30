@@ -1,7 +1,10 @@
 import { Plugin, ServerAPI } from '@signalk/server-api'
 import { Request, Response, IRouter } from 'express'
+import { promises as fs } from 'node:fs'
+import path from 'node:path'
 
 const PLUGIN_ID = 'signalk-hmi-designer'
+const LAYOUT_FILE = 'layout.json'
 
 interface ProxyBody {
   url?: unknown
@@ -53,6 +56,43 @@ const plugin = (app: ServerAPI): Plugin => {
     registerWithRouter(router: IRouter) {
       router.get('/status', (_req: Request, res: Response) => {
         res.json({ ok: true, plugin: PLUGIN_ID })
+      })
+
+      // Layout persistence — stored in the plugin's private data dir
+      // so the webapp can reload its last-pushed layout after a
+      // browser refresh.
+      router.get('/layout', async (_req: Request, res: Response) => {
+        try {
+          const file = path.join(app.getDataDirPath(), LAYOUT_FILE)
+          const data = await fs.readFile(file, 'utf-8')
+          res.type('application/json').send(data)
+        } catch (err) {
+          const e = err as NodeJS.ErrnoException
+          if (e.code === 'ENOENT') {
+            res.status(404).json({ error: 'no layout saved yet' })
+            return
+          }
+          res.status(500).json({ error: e.message })
+        }
+      })
+
+      router.put('/layout', async (req: Request, res: Response) => {
+        if (!req.body || typeof req.body !== 'object') {
+          res.status(400).json({ error: 'body must be JSON object' })
+          return
+        }
+        try {
+          const dir = app.getDataDirPath()
+          await fs.mkdir(dir, { recursive: true })
+          const file = path.join(dir, LAYOUT_FILE)
+          const tmp = `${file}.tmp`
+          await fs.writeFile(tmp, JSON.stringify(req.body))
+          await fs.rename(tmp, file)
+          res.json({ ok: true })
+        } catch (err) {
+          const e = err as Error
+          res.status(500).json({ error: e.message })
+        }
       })
 
       // Forward arbitrary GET/POST to a device on the local network.

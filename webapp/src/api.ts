@@ -77,6 +77,30 @@ export async function pushLayout(
 }
 
 /**
+ * Read the last-saved layout from the plugin's data dir. Returns null
+ * if nothing has been saved yet (HTTP 404).
+ */
+export async function loadSavedLayout(): Promise<Layout | null> {
+  const r = await fetch(`${PLUGIN_BASE}/layout`)
+  if (r.status === 404) return null
+  if (!r.ok) throw new Error(`load layout: HTTP ${r.status}`)
+  return (await r.json()) as Layout
+}
+
+/** Persist a layout to the plugin's data dir (atomic write). */
+export async function saveLayout(layout: Layout): Promise<void> {
+  const r = await fetch(`${PLUGIN_BASE}/layout`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(layout)
+  })
+  if (!r.ok) {
+    const t = await r.text()
+    throw new Error(`save layout: HTTP ${r.status} ${t}`)
+  }
+}
+
+/**
  * Returns all SignalK paths currently published on this server, by
  * walking GET /signalk/v1/api/vessels/self. Returns an alphabetically
  * sorted list.
