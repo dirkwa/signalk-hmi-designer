@@ -15,6 +15,7 @@ import {
   loadSavedLayout,
   pushLayout,
   saveLayout,
+  type MetaZone,
   type PushResult
 } from './api'
 import { Layout, Screen, Widget, WidgetKind, HelloResponse } from './schema'
@@ -130,6 +131,9 @@ export function App(): JSX.Element {
   })
   const [statusOverlay, setStatusOverlay] = useState<boolean>(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [pathZones, setPathZones] = useState<Map<string, MetaZone[]>>(
+    () => new Map()
+  )
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
@@ -148,7 +152,22 @@ export function App(): JSX.Element {
       .then((saved) => {
         if (!saved) return
         const first = saved.screens[0]
-        if (first) setScreen(first)
+        if (first) {
+          setScreen(first)
+          // Hydrate zones for any bound path in the restored layout.
+          for (const w of first.widgets) {
+            if (!w.bind) continue
+            void fetchPathMeta(w.bind).then((meta) => {
+              if (meta?.zones && meta.zones.length > 0) {
+                setPathZones((prev) => {
+                  const next = new Map(prev)
+                  next.set(w.bind!, meta.zones!)
+                  return next
+                })
+              }
+            })
+          }
+        }
         if (saved.status_overlay !== undefined) {
           setStatusOverlay(saved.status_overlay)
         }
@@ -241,6 +260,13 @@ export function App(): JSX.Element {
     if (!path) return
     void fetchPathMeta(path).then((meta) => {
       if (!meta) return
+      if (meta.zones && meta.zones.length > 0) {
+        setPathZones((prev) => {
+          const next = new Map(prev)
+          next.set(path, meta.zones!)
+          return next
+        })
+      }
       const d = deriveDisplayDefaults(meta)
       if (!d) return
       setScreen((prev) => ({
@@ -591,6 +617,7 @@ export function App(): JSX.Element {
                     <WidgetPreview
                       w={w}
                       value={w.bind ? skValues.get(w.bind) : undefined}
+                      zones={w.bind ? pathZones.get(w.bind) : undefined}
                     />
                   </div>
                 )

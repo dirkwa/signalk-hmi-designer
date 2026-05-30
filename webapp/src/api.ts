@@ -124,9 +124,25 @@ export async function fetchSelfPaths(): Promise<string[]> {
  * e.g. "value - 273.15" or "value * 1.94384". We only auto-resolve the
  * common shapes; unrecognised formulas fall back to identity.
  */
+export type ZoneState =
+  | 'nominal'
+  | 'normal'
+  | 'alert'
+  | 'warn'
+  | 'alarm'
+  | 'emergency'
+
+export interface MetaZone {
+  lower: number
+  upper: number
+  state: ZoneState
+  message?: string
+}
+
 export interface PathMeta {
   description?: string
   units?: string
+  zones?: MetaZone[]
   displayUnits?: {
     category?: string
     targetUnit?: string
@@ -135,6 +151,35 @@ export interface PathMeta {
     symbol?: string
     displayFormat?: string
   }
+}
+
+/** SignalK-conventional hex color for a zone state. */
+export function colorForZoneState(s: ZoneState): string {
+  switch (s) {
+    case 'nominal':
+    case 'normal':
+      return '#3fb950'
+    case 'alert':
+      return '#58a6ff'
+    case 'warn':
+      return '#d29922'
+    case 'alarm':
+      return '#db6d28'
+    case 'emergency':
+      return '#f85149'
+  }
+}
+
+/** Find the zone matching a display-space value; null if none. */
+export function matchZone(
+  zones: MetaZone[] | undefined,
+  displayValue: number
+): MetaZone | null {
+  if (!zones) return null
+  for (const z of zones) {
+    if (displayValue >= z.lower && displayValue < z.upper) return z
+  }
+  return null
 }
 
 export interface DisplayDefaults {

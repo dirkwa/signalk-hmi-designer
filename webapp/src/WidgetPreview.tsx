@@ -1,11 +1,34 @@
-import { JSX } from 'react'
+import type { CSSProperties, JSX } from 'react'
 import { Widget } from './schema'
+import { colorForZoneState, matchZone, type MetaZone } from './api'
 
 type SkValue = number | string | boolean | null
 
 interface PreviewProps {
   w: Widget
   value?: SkValue | undefined
+  zones?: MetaZone[] | undefined
+}
+
+const ACCENT = '#58a6ff'
+const FG = '#e6edf3'
+const TILE_BG = '#161b22'
+
+/** Returns the zone color for the widget's current displayed value,
+ *  or fallback when no zones/no match. */
+function zoneColor(
+  w: Widget,
+  value: SkValue | undefined,
+  zones: MetaZone[] | undefined,
+  fallback: string
+): string {
+  if (!zones || typeof value !== 'number') return fallback
+  const d = 'display' in w ? w.display : undefined
+  const scale = d?.scale ?? 1
+  const offset = d?.offset ?? 0
+  const display = value * scale + offset
+  const z = matchZone(zones, display)
+  return z ? colorForZoneState(z.state) : fallback
 }
 
 /**
@@ -19,16 +42,16 @@ interface PreviewProps {
  * present in `value`; otherwise "—" placeholder, matching what the
  * device shows before its first delta lands.
  */
-export function WidgetPreview({ w, value }: PreviewProps): JSX.Element {
+export function WidgetPreview({ w, value, zones }: PreviewProps): JSX.Element {
   switch (w.type) {
     case 'label':
-      return <LabelPreview w={w} value={value} />
+      return <LabelPreview w={w} value={value} zones={zones} />
     case 'toggle':
-      return <TogglePreview w={w} value={value} />
+      return <TogglePreview w={w} value={value} zones={zones} />
     case 'arc':
-      return <ArcPreview w={w} value={value} />
+      return <ArcPreview w={w} value={value} zones={zones} />
     case 'bar':
-      return <BarPreview w={w} value={value} />
+      return <BarPreview w={w} value={value} zones={zones} />
     case 'button':
       return <ButtonPreview w={w} />
   }
@@ -69,20 +92,26 @@ function fillFraction(
 
 function LabelPreview({
   w,
-  value
+  value,
+  zones
 }: {
   w: Extract<Widget, { type: 'label' }>
   value: SkValue | undefined
+  zones: MetaZone[] | undefined
 }) {
   const hasBind = Boolean(w.bind)
   const hasCaption = Boolean(w.label)
+  const valueColor = zoneColor(w, value, zones, FG)
   if (!hasBind) {
     return <div className="wp wp-label-text">{w.label ?? ''}</div>
   }
   return (
     <div className="wp wp-label-tile">
       {hasCaption && <div className="wp-caption">{w.label}</div>}
-      <div className={hasCaption ? 'wp-value-stacked' : 'wp-value-centered'}>
+      <div
+        className={hasCaption ? 'wp-value-stacked' : 'wp-value-centered'}
+        style={{ color: valueColor }}
+      >
         {formatValue(w, value)}
       </div>
     </div>
@@ -91,14 +120,19 @@ function LabelPreview({
 
 function TogglePreview({
   w,
-  value
+  value,
+  zones
 }: {
   w: Extract<Widget, { type: 'toggle' }>
   value: SkValue | undefined
+  zones: MetaZone[] | undefined
 }) {
   const on = value === true || value === 1
+  // For zones we treat the bool/int as a numeric value.
+  const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value
+  const bg = zoneColor(w, numericValue, zones, TILE_BG)
   return (
-    <div className="wp wp-tile">
+    <div className="wp wp-tile" style={{ background: bg }}>
       {w.label && <div className="wp-caption">{w.label}</div>}
       <div className={`wp-switch ${on ? 'wp-switch-on' : 'wp-switch-off'}`}>
         <div className="wp-switch-knob" />
@@ -109,14 +143,13 @@ function TogglePreview({
 
 function ArcPreview({
   w,
-  value
+  value,
+  zones
 }: {
   w: Extract<Widget, { type: 'arc' }>
   value: SkValue | undefined
+  zones: MetaZone[] | undefined
 }) {
-  // Device default: arc sweeps from 135° (start) clockwise to 45°
-  // (end). Same convention used here. When no value, show ~30% so
-  // the indicator is visible during design.
   const start = w.start_angle ?? 135
   const end = w.end_angle ?? 45
   const d = w.display
@@ -125,6 +158,7 @@ function ArcPreview({
   let sweep = end - start
   if (sweep <= 0) sweep += 360
   const indicatorEnd = (start + sweep * fill) % 360
+  const indicatorColor = zoneColor(w, value, zones, ACCENT)
 
   return (
     <div className="wp wp-arc">
@@ -133,7 +167,7 @@ function ArcPreview({
         <ArcPath
           start={start}
           end={indicatorEnd}
-          color="#58a6ff"
+          color={indicatorColor}
           width={8}
         />
       </svg>
@@ -180,15 +214,22 @@ function ArcPath({
 
 function BarPreview({
   w,
-  value
+  value,
+  zones
 }: {
   w: Extract<Widget, { type: 'bar' }>
   value: SkValue | undefined
+  zones: MetaZone[] | undefined
 }) {
   const d = w.display
   const fill =
     fillFraction(value, w.min, w.max, d?.scale ?? 1, d?.offset ?? 0) ?? 0.3
   const fillPct = Math.round(fill * 100)
+  const fillColor = zoneColor(w, value, zones, ACCENT)
+  const fillStyle: CSSProperties = {
+    background: fillColor,
+    ...(w.vertical ? { height: `${fillPct}%` } : { width: `${fillPct}%` })
+  }
   return (
     <div className="wp wp-tile">
       <div className="wp-bar-head">
@@ -196,12 +237,7 @@ function BarPreview({
         <span className="wp-bar-value">{formatValue(w, value)}</span>
       </div>
       <div className={`wp-bar-track ${w.vertical ? 'vertical' : 'horizontal'}`}>
-        <div
-          className="wp-bar-fill"
-          style={
-            w.vertical ? { height: `${fillPct}%` } : { width: `${fillPct}%` }
-          }
-        />
+        <div className="wp-bar-fill" style={fillStyle} />
       </div>
     </div>
   )
