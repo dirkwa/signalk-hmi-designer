@@ -150,15 +150,17 @@ const plugin = (app: ServerAPI): Plugin => {
 
         try {
           const controller = new AbortController()
-          const t = setTimeout(() => controller.abort(), 10_000)
+          const t = setTimeout(() => controller.abort(), 15_000)
           init.signal = controller.signal
           const upstream = await fetch(url, init)
           clearTimeout(t)
-          const text = await upstream.text()
+          // Read as a Buffer so binary responses (BMP screenshots etc)
+          // pass through unmangled.
+          const body = Buffer.from(await upstream.arrayBuffer())
           res.status(upstream.status)
           const ct = upstream.headers.get('content-type')
           if (ct) res.setHeader('content-type', ct)
-          res.send(text)
+          res.send(body)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
           res.status(502).json({ error: msg })

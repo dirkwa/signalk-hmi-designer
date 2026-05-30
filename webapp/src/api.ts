@@ -57,6 +57,33 @@ export interface PushResult {
   widgets?: number
 }
 
+/**
+ * Fetch the device's current framebuffer as a Blob via the plugin
+ * device-proxy. Returns the BMP as a blob the caller can drop into
+ * URL.createObjectURL for use in <img src=...>.
+ */
+export async function fetchScreenshot(deviceUrl: string): Promise<Blob> {
+  const r = await fetch(`${PLUGIN_BASE}/device-proxy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      url: `${deviceUrl.replace(/\/$/, '')}/screenshot`,
+      method: 'GET'
+    })
+  })
+  if (!r.ok) {
+    let msg = `screenshot HTTP ${r.status}`
+    try {
+      const j = (await r.json()) as { error?: unknown }
+      if (typeof j.error === 'string') msg = j.error
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(msg)
+  }
+  return r.blob()
+}
+
 /** Push a layout to a target device. */
 export async function pushLayout(
   deviceUrl: string,

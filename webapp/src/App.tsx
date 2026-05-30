@@ -11,6 +11,7 @@ import {
   deriveDisplayDefaults,
   fetchHello,
   fetchPathMeta,
+  fetchScreenshot,
   fetchSelfPaths,
   loadSavedLayout,
   pushLayout,
@@ -134,6 +135,10 @@ export function App(): JSX.Element {
   const [pathZones, setPathZones] = useState<Map<string, MetaZone[]>>(
     () => new Map()
   )
+  const [shotUrl, setShotUrl] = useState<string | null>(null)
+  const [shotOpacity, setShotOpacity] = useState<number>(0.5)
+  const [shotErr, setShotErr] = useState<string | null>(null)
+  const [shotBusy, setShotBusy] = useState<boolean>(false)
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
@@ -310,6 +315,27 @@ export function App(): JSX.Element {
     }
   }
 
+  const onTakeScreenshot = async (): Promise<void> => {
+    setShotErr(null)
+    setShotBusy(true)
+    try {
+      const blob = await fetchScreenshot(deviceUrl)
+      // Replace the previous blob URL (free its memory).
+      if (shotUrl) URL.revokeObjectURL(shotUrl)
+      setShotUrl(URL.createObjectURL(blob))
+    } catch (e) {
+      setShotErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setShotBusy(false)
+    }
+  }
+
+  const onHideScreenshot = (): void => {
+    if (shotUrl) URL.revokeObjectURL(shotUrl)
+    setShotUrl(null)
+    setShotErr(null)
+  }
+
   const onPush = async (): Promise<void> => {
     setPushErr(null)
     setPushResult(null)
@@ -381,6 +407,31 @@ export function App(): JSX.Element {
             />
             status bar
           </label>
+          <button
+            onClick={() =>
+              shotUrl ? onHideScreenshot() : void onTakeScreenshot()
+            }
+            disabled={shotBusy}
+            title="Fetch the device's current screen and overlay it on the canvas"
+          >
+            {shotBusy ? '…' : shotUrl ? 'Hide device' : 'Show device'}
+          </button>
+          {shotUrl && (
+            <label
+              className="topbar-toggle"
+              title="Overlay opacity"
+              style={{ minWidth: 80 }}
+            >
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={shotOpacity}
+                onChange={(e) => setShotOpacity(Number(e.target.value))}
+              />
+            </label>
+          )}
         </div>
         <div className="topbar-status">
           {hello && (
@@ -394,6 +445,7 @@ export function App(): JSX.Element {
           )}
           {helloErr && <span className="err">{helloErr}</span>}
           {pushErr && <span className="err">{pushErr}</span>}
+          {shotErr && <span className="err">{shotErr}</span>}
           {pushResult && (
             <span className={pushResult.ok ? 'ok' : 'err'}>
               {pushResult.ok
@@ -558,6 +610,22 @@ export function App(): JSX.Element {
               >
                 <span>host · wifi · sk · n2k · uptime · heap</span>
               </div>
+            )}
+            {shotUrl && (
+              <img
+                className="canvas-shot"
+                src={shotUrl}
+                alt="device screenshot"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  opacity: shotOpacity,
+                  pointerEvents: 'none',
+                  zIndex: 100
+                }}
+              />
             )}
             <div
               className="canvas-content"
