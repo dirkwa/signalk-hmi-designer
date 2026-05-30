@@ -3,7 +3,14 @@ import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
-import { fetchHello, fetchSelfPaths, pushLayout, type PushResult } from './api'
+import {
+  deriveDisplayDefaults,
+  fetchHello,
+  fetchPathMeta,
+  fetchSelfPaths,
+  pushLayout,
+  type PushResult
+} from './api'
 import { Layout, Screen, Widget, WidgetKind, HelloResponse } from './schema'
 import './app.css'
 
@@ -166,6 +173,48 @@ export function App(): JSX.Element {
         w.id === id ? ({ ...w, ...patch } as Widget) : w
       )
     }))
+  }
+
+  // Setting the bind ALSO triggers a metadata fetch from SK and
+  // prefills any unfilled display fields (unit/scale/offset/decimals).
+  // User-modified fields aren't overwritten — only empty/default
+  // values get filled. Toggle / button widgets have no display block,
+  // so the fetch is skipped.
+  const applyBind = (id: string, path: string): void => {
+    updateWidget(id, { bind: path })
+    if (!path) return
+    void fetchPathMeta(path).then((meta) => {
+      if (!meta) return
+      const d = deriveDisplayDefaults(meta)
+      if (!d) return
+      setScreen((prev) => ({
+        ...prev,
+        widgets: prev.widgets.map((w) => {
+          if (w.id !== id) return w
+          // Only widgets that have a display block get prefilled.
+          if (
+            w.type !== 'label' &&
+            w.type !== 'arc' &&
+            w.type !== 'bar' &&
+            w.type !== 'button'
+          ) {
+            return w
+          }
+          const cur = w.display ?? {}
+          const merged = {
+            unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+            scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+            offset:
+              cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+            decimals:
+              cur.decimals !== undefined && cur.decimals !== 1
+                ? cur.decimals
+                : d.decimals
+          }
+          return { ...w, display: merged } as Widget
+        })
+      }))
+    })
   }
 
   const onConnect = async (): Promise<void> => {
@@ -340,9 +389,7 @@ export function App(): JSX.Element {
                 bind (SK path)
                 <input
                   value={selected.bind ?? ''}
-                  onChange={(e) =>
-                    updateWidget(selected.id, { bind: e.target.value })
-                  }
+                  onChange={(e) => applyBind(selected.id, e.target.value)}
                 />
               </label>
               {(selected.type === 'arc' || selected.type === 'bar') && (
@@ -454,7 +501,7 @@ export function App(): JSX.Element {
               <li
                 key={p}
                 onClick={() => {
-                  if (selected) updateWidget(selected.id, { bind: p })
+                  if (selected) applyBind(selected.id, p)
                 }}
                 title="click to bind to selected widget"
               >

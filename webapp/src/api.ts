@@ -91,6 +91,87 @@ export async function fetchSelfPaths(): Promise<string[]> {
   return paths
 }
 
+/**
+ * SK path metadata as returned by
+ *   GET /signalk/v1/api/vessels/self/<dot.path>/meta
+ *
+ * `displayUnits` is what the SK server delivers after merging user
+ * unit preferences. `formula` is a simple JS-ish expression in `value`,
+ * e.g. "value - 273.15" or "value * 1.94384". We only auto-resolve the
+ * common shapes; unrecognised formulas fall back to identity.
+ */
+export interface PathMeta {
+  description?: string
+  units?: string
+  displayUnits?: {
+    category?: string
+    targetUnit?: string
+    formula?: string
+    inverseFormula?: string
+    symbol?: string
+    displayFormat?: string
+  }
+}
+
+export interface DisplayDefaults {
+  unit: string
+  scale: number
+  offset: number
+  decimals: number
+}
+
+/** Fetch metadata for a SK path. Returns null on 404 / non-200. */
+export async function fetchPathMeta(skPath: string): Promise<PathMeta | null> {
+  const slashed = skPath.replace(/\./g, '/')
+  const r = await fetch(`/signalk/v1/api/vessels/self/${slashed}/meta`)
+  if (!r.ok) return null
+  return (await r.json()) as PathMeta
+}
+
+/**
+ * Derive display defaults from SK metadata. Returns null if `meta` has
+ * no displayUnits at all. Recognised formulas:
+ *   "value"            -> scale=1 offset=0  (identity)
+ *   "value - <N>"      -> scale=1 offset=-N (K -> C)
+ *   "value + <N>"      -> scale=1 offset=+N
+ *   "value * <N>"      -> scale=N offset=0  (rad->deg, m/s->kn, ratio->%)
+ *   "value / <N>"      -> scale=1/N offset=0
+ * Anything else stays identity and the user can fix it.
+ */
+export function deriveDisplayDefaults(meta: PathMeta): DisplayDefaults | null {
+  if (!meta.displayUnits) return null
+  const du = meta.displayUnits
+  const unit = du.symbol ?? du.targetUnit ?? meta.units ?? ''
+  const decimals = decimalsFromFormat(du.displayFormat)
+  const { scale, offset } = parseFormula(du.formula ?? 'value')
+  return { unit, scale, offset, decimals }
+}
+
+function decimalsFromFormat(fmt: string | undefined): number {
+  if (!fmt) return 1
+  // "0.0" -> 1, "0.00" -> 2, "0" -> 0
+  const dot = fmt.indexOf('.')
+  if (dot === -1) return 0
+  return fmt.length - dot - 1
+}
+
+function parseFormula(formula: string): { scale: number; offset: number } {
+  const trimmed = formula.trim()
+  if (trimmed === 'value') return { scale: 1, offset: 0 }
+  const sub = /^value\s*-\s*([\d.eE+-]+)$/.exec(trimmed)
+  if (sub && sub[1] !== undefined) return { scale: 1, offset: -Number(sub[1]) }
+  const add = /^value\s*\+\s*([\d.eE+-]+)$/.exec(trimmed)
+  if (add && add[1] !== undefined) return { scale: 1, offset: Number(add[1]) }
+  const mul = /^value\s*\*\s*([\d.eE+-]+)$/.exec(trimmed)
+  if (mul && mul[1] !== undefined) return { scale: Number(mul[1]), offset: 0 }
+  const div = /^value\s*\/\s*([\d.eE+-]+)$/.exec(trimmed)
+  if (div && div[1] !== undefined) {
+    const n = Number(div[1])
+    return { scale: n === 0 ? 1 : 1 / n, offset: 0 }
+  }
+  return { scale: 1, offset: 0 }
+}
+
 function walk(prefix: string, node: unknown, out: string[]): void {
   if (typeof node !== 'object' || node === null) return
   const obj = node as Record<string, unknown>
