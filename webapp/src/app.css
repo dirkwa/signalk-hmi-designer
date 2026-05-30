@@ -163,12 +163,11 @@ button.x { padding: 0 6px; font-size: 14px; }
 
 .grid-wrap {
   background: var(--bg);
-  width: 1024px;
-  height: 600px;
+  /* width / height / background-size are set inline from the device's
+     /hello display dimensions so the canvas is 1:1 with the panel. */
   position: relative;
   background-image: linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
                     linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-  background-size: 42.67px 25px;
 }
 
 /* The grid item itself: invisible until selected. Click-target only. */

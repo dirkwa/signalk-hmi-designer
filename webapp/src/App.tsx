@@ -24,12 +24,16 @@ declare const __PLUGIN_VERSION__: string
 /* ---------- helpers ---------- */
 
 // react-grid-layout uses unitless column/row coordinates. We translate
-// to device pixels on export. cols * COL_PX_W and rows * ROW_PX_H must
-// fit the target display.
+// to device pixels on export. Column width is derived per-render from
+// the target display's `display.w` reported in /hello; rows are a
+// fixed pixel height for stability across different aspect ratios.
 const COLS = 24
 const ROW_HEIGHT = 25
-const COL_PX_W = 1024 / COLS // 42.67 px per column on a 1024-wide panel
 const ROW_PX_H = ROW_HEIGHT
+// Fallback width used before a device has connected (hello not loaded
+// yet). 1024 matches the Waveshare 7B which we develop against.
+const DEFAULT_DISPLAY_W = 1024
+const DEFAULT_DISPLAY_H = 600
 
 let nextId = 1
 const genId = (prefix: string): string => `${prefix}-${nextId++}`
@@ -86,22 +90,22 @@ interface GridSpec {
   h: number
 }
 
-function widgetToGrid(w: Widget): GridSpec {
+function widgetToGrid(w: Widget, colPxW: number): GridSpec {
   return {
     i: w.id,
-    x: Math.round(w.x / COL_PX_W),
+    x: Math.round(w.x / colPxW),
     y: Math.round(w.y / ROW_PX_H),
-    w: Math.max(1, Math.round(w.w / COL_PX_W)),
+    w: Math.max(1, Math.round(w.w / colPxW)),
     h: Math.max(1, Math.round(w.h / ROW_PX_H))
   }
 }
 
-function applyGrid(w: Widget, g: GLLayout): Widget {
+function applyGrid(w: Widget, g: GLLayout, colPxW: number): Widget {
   return {
     ...w,
-    x: Math.round(g.x * COL_PX_W),
+    x: Math.round(g.x * colPxW),
     y: Math.round(g.y * ROW_PX_H),
-    w: Math.round(g.w * COL_PX_W),
+    w: Math.round(g.w * colPxW),
     h: Math.round(g.h * ROW_PX_H)
   }
 }
@@ -154,7 +158,17 @@ export function App(): JSX.Element {
     [screen]
   )
 
-  const grid = useMemo(() => screen.widgets.map(widgetToGrid), [screen.widgets])
+  // Canvas dimensions track the connected device's /hello.display
+  // so the designer is 1:1 with whatever panel it's targeting.
+  // Before Connect, fall back to the Waveshare 7B native resolution.
+  const displayW = hello?.display?.w ?? DEFAULT_DISPLAY_W
+  const displayH = hello?.display?.h ?? DEFAULT_DISPLAY_H
+  const colPxW = displayW / COLS
+
+  const grid = useMemo(
+    () => screen.widgets.map((w) => widgetToGrid(w, colPxW)),
+    [screen.widgets, colPxW]
+  )
 
   // Live SK values for any bound widget. The hook re-subscribes when
   // the set of bound paths changes.
@@ -179,7 +193,7 @@ export function App(): JSX.Element {
       ...prev,
       widgets: prev.widgets.map((w) => {
         const g = next.find((n) => n.i === w.id)
-        return g ? applyGrid(w, g) : w
+        return g ? applyGrid(w, g, colPxW) : w
       })
     }))
   }
@@ -482,13 +496,20 @@ export function App(): JSX.Element {
         <main className="canvas">
           <h3>{screen.title} canvas</h3>
           {/* Deselect on click bubbles up to the app root. */}
-          <div className="grid-wrap">
+          <div
+            className="grid-wrap"
+            style={{
+              width: `${displayW}px`,
+              height: `${displayH}px`,
+              backgroundSize: `${colPxW}px ${ROW_PX_H}px`
+            }}
+          >
             <GridLayout
               className="grid"
               layout={grid}
               cols={COLS}
               rowHeight={ROW_HEIGHT}
-              width={1024}
+              width={displayW}
               // The designer must NOT auto-reflow: a drag of one
               // widget should never displace another. allowOverlap lets
               // tiles park anywhere; compactType=null disables gravity;
