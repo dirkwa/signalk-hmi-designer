@@ -3,6 +3,9 @@ import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
+import { WidgetPreview } from './WidgetPreview'
+import { useSkValues } from './skStream'
+
 import {
   deriveDisplayDefaults,
   fetchHello,
@@ -152,12 +155,23 @@ export function App(): JSX.Element {
   )
 
   const grid = useMemo(() => screen.widgets.map(widgetToGrid), [screen.widgets])
+
+  // Live SK values for any bound widget. The hook re-subscribes when
+  // the set of bound paths changes.
+  const boundPaths = useMemo(
+    () =>
+      screen.widgets
+        .map((w) => w.bind ?? '')
+        .filter((p): p is string => p.length > 0),
+    [screen.widgets]
+  )
+  const skValues = useSkValues(boundPaths)
   const selected = screen.widgets.find((w) => w.id === selectedId) ?? null
 
   const filteredPaths = useMemo(() => {
-    if (!pathFilter) return paths.slice(0, 200)
+    if (!pathFilter) return paths
     const f = pathFilter.toLowerCase()
-    return paths.filter((p) => p.toLowerCase().includes(f)).slice(0, 200)
+    return paths.filter((p) => p.toLowerCase().includes(f))
   }, [paths, pathFilter])
 
   const onLayoutChange = (next: GLLayout[]): void => {
@@ -281,122 +295,57 @@ export function App(): JSX.Element {
   }, [hello])
 
   return (
-    <div className="hmi-app">
+    <div
+      className="hmi-app"
+      // Click anywhere not absorbed by a tile or interactive control
+      // clears the selection. Tile clicks stopPropagation below; form
+      // controls naturally don't bubble through to here in a way that
+      // matters because they don't change selection state.
+      onClick={() => setSelectedId(null)}
+    >
       <header>
-        <strong>HMI Designer</strong>
-        <span className="ver">v{__PLUGIN_VERSION__}</span>
+        <div className="brand">
+          <strong>HMI Designer</strong>
+          <span className="ver">v{__PLUGIN_VERSION__}</span>
+        </div>
+        <div className="topbar-device">
+          <input
+            type="text"
+            className="topbar-url"
+            value={deviceUrl}
+            onChange={(e) => setDeviceUrl(e.target.value)}
+            placeholder="http://p4-cockpit.local:8081"
+          />
+          <button onClick={() => void onConnect()}>Connect</button>
+          <button className="primary" onClick={() => void onPush()}>
+            Push
+          </button>
+        </div>
+        <div className="topbar-status">
+          {hello && (
+            <span className="topbar-hello">
+              {hello.firmware ?? 'device'} ·{' '}
+              {hello.display ? `${hello.display.w}×${hello.display.h} · ` : ''}
+              schema {hello.schema}
+              {hello.active_layout_name &&
+                ` · active: ${hello.active_layout_name} (${hello.layout_source ?? '?'})`}
+            </span>
+          )}
+          {helloErr && <span className="err">{helloErr}</span>}
+          {pushErr && <span className="err">{pushErr}</span>}
+          {pushResult && (
+            <span className={pushResult.ok ? 'ok' : 'err'}>
+              {pushResult.ok
+                ? `pushed — ${pushResult.screens} screens, ${pushResult.widgets} widgets`
+                : (pushResult.err ?? 'push failed')}
+            </span>
+          )}
+        </div>
       </header>
 
       <div className="cols">
-        {/* ---- left column: device & push ---- */}
-        <aside className="col left">
-          <h3>Device</h3>
-          <label>
-            URL
-            <input
-              type="text"
-              value={deviceUrl}
-              onChange={(e) => setDeviceUrl(e.target.value)}
-              placeholder="http://p4-cockpit.local:8081"
-            />
-          </label>
-          <button onClick={() => void onConnect()}>Connect</button>
-          {helloErr && <p className="err">{helloErr}</p>}
-          {hello && (
-            <div className="hello">
-              <div>
-                schema <code>{hello.schema}</code>
-              </div>
-              {hello.firmware && <div>fw {hello.firmware}</div>}
-              {hello.display && (
-                <div>
-                  display {hello.display.w}×{hello.display.h}
-                </div>
-              )}
-              <div>widgets: {Object.keys(hello.widgets).join(', ')}</div>
-              {hello.active_layout_name && (
-                <div>
-                  active: {hello.active_layout_name} (
-                  {hello.layout_source ?? '?'})
-                </div>
-              )}
-            </div>
-          )}
-
-          <h3>Push</h3>
-          <button className="primary" onClick={() => void onPush()}>
-            Push layout
-          </button>
-          {pushErr && <p className="err">{pushErr}</p>}
-          {pushResult && (
-            <p className={pushResult.ok ? 'ok' : 'err'}>
-              {pushResult.ok
-                ? `ok — ${pushResult.screens} screens, ${pushResult.widgets} widgets`
-                : (pushResult.err ?? 'failed')}
-            </p>
-          )}
-
-          <h3>Layout JSON</h3>
-          <textarea
-            readOnly
-            className="json"
-            value={JSON.stringify(layoutDoc, null, 2)}
-          />
-        </aside>
-
-        {/* ---- center: canvas ---- */}
-        <main className="canvas">
-          <h3>{screen.title} canvas</h3>
-          <div className="grid-wrap">
-            <GridLayout
-              className="grid"
-              layout={grid}
-              cols={COLS}
-              rowHeight={ROW_HEIGHT}
-              width={1024}
-              compactType={null}
-              preventCollision={false}
-              // Only the tile-head bar is draggable. The body is free
-              // to receive clicks for selection.
-              draggableHandle=".tile-head"
-              onLayoutChange={onLayoutChange}
-            >
-              {screen.widgets.map((w) => (
-                <div
-                  key={w.id}
-                  className={`tile ${selectedId === w.id ? 'sel' : ''}`}
-                >
-                  <div
-                    className="tile-head"
-                    onMouseDown={() => setSelectedId(w.id)}
-                  >
-                    <span className="tile-kind">{w.type}</span>
-                    <button
-                      className="x"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        removeWidget(w.id)
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div
-                    className="tile-body"
-                    onClick={() => setSelectedId(w.id)}
-                  >
-                    <div>{w.label ?? w.id}</div>
-                    {w.bind && <code>{w.bind}</code>}
-                  </div>
-                </div>
-              ))}
-            </GridLayout>
-          </div>
-        </main>
-
-        {/* ---- right: palette + props ---- */}
-        <aside className="col right">
+        {/* ---- left column: palette + selected props ---- */}
+        <aside className="col left" onClick={(e) => e.stopPropagation()}>
           <h3>Add widget</h3>
           <div className="palette">
             {availableKinds.map((k) => (
@@ -527,7 +476,71 @@ export function App(): JSX.Element {
               )}
             </div>
           )}
+        </aside>
 
+        {/* ---- center: canvas ---- */}
+        <main className="canvas">
+          <h3>{screen.title} canvas</h3>
+          {/* Deselect on click bubbles up to the app root. */}
+          <div className="grid-wrap">
+            <GridLayout
+              className="grid"
+              layout={grid}
+              cols={COLS}
+              rowHeight={ROW_HEIGHT}
+              width={1024}
+              // The designer must NOT auto-reflow: a drag of one
+              // widget should never displace another. allowOverlap lets
+              // tiles park anywhere; compactType=null disables gravity;
+              // preventCollision=true keeps RGL from pushing siblings.
+              compactType={null}
+              preventCollision={true}
+              allowOverlap={true}
+              // Drag only via the chrome bar (which only appears on
+              // selected widgets), so unselected widgets behave as
+              // pure click targets.
+              draggableHandle=".chrome"
+              onLayoutChange={onLayoutChange}
+            >
+              {screen.widgets.map((w) => {
+                const isSel = selectedId === w.id
+                return (
+                  <div
+                    key={w.id}
+                    className={`tile ${isSel ? 'sel' : ''}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setSelectedId(w.id)
+                    }}
+                  >
+                    {isSel && (
+                      <div className="chrome">
+                        <span>{w.type}</span>
+                        <button
+                          className="x"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeWidget(w.id)
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                    <WidgetPreview
+                      w={w}
+                      value={w.bind ? skValues.get(w.bind) : undefined}
+                    />
+                  </div>
+                )
+              })}
+            </GridLayout>
+          </div>
+        </main>
+
+        {/* ---- right: SK paths only ---- */}
+        <aside className="col right" onClick={(e) => e.stopPropagation()}>
           <h3>SK paths {paths.length > 0 && `(${paths.length})`}</h3>
           <input
             placeholder="filter…"

@@ -23,10 +23,17 @@ html, body, #root {
 }
 
 header {
-  padding: 8px 16px;
+  padding: 6px 12px;
   background: var(--panel);
   display: flex;
-  gap: 12px;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  gap: 8px;
   align-items: baseline;
 }
 
@@ -34,6 +41,38 @@ header {
   color: var(--muted);
   font-size: 12px;
 }
+
+.topbar-device {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.topbar-url {
+  width: 240px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid #30363d;
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.topbar-status {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.topbar-hello code { color: var(--fg); }
 
 .cols {
   display: grid;
@@ -49,7 +88,11 @@ header {
   padding: 12px;
   border-radius: 6px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
+
 
 .col h3 {
   margin: 12px 0 6px;
@@ -103,22 +146,6 @@ button.x { padding: 0 6px; font-size: 14px; }
 .hello { font-size: 12px; color: var(--muted); margin: 6px 0; }
 .hello code { color: var(--fg); }
 
-/* Layout JSON preview textarea — explicit color (some browsers default
-   textareas to a dark text on dark theme, which becomes unreadable on
-   our dark panel background). Sized generously since the user often
-   wants to copy the whole document out. */
-.json {
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  min-height: 280px;
-  background: #0b0f14 !important;
-  color: var(--fg) !important;
-  white-space: pre;
-  overflow: auto;
-  line-height: 1.4;
-  padding: 8px !important;
-  resize: vertical;
-}
 
 .canvas {
   background: var(--panel);
@@ -144,31 +171,214 @@ button.x { padding: 0 6px; font-size: 14px; }
   background-size: 42.67px 25px;
 }
 
+/* The grid item itself: invisible until selected. Click-target only. */
 .tile {
-  background: #21262d;
-  border: 1px solid #30363d;
-  border-radius: 4px;
+  position: relative;
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
   cursor: pointer;
+  /* No background/border by default — the preview inside is the
+     widget's actual look. Selected gets a frame + chrome (below). */
 }
 
-.tile.sel { border-color: var(--accent); }
+.tile.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
-.tile-head {
+/* Selection chrome — only rendered when selected. */
+.chrome {
+  position: absolute;
+  top: -22px;
+  left: -2px;
+  right: -2px;
+  height: 20px;
+  background: var(--accent);
+  color: #000;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #161b22;
-  padding: 2px 6px;
+  padding: 0 6px;
   font-size: 10px;
-  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
   cursor: move;
+  border-radius: 3px 3px 0 0;
+  z-index: 2;
 }
 
-.tile-body {
+.chrome .x {
+  background: rgba(0, 0, 0, 0.15);
+  color: #000;
+  border: none;
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+  border-radius: 2px;
   cursor: pointer;
+}
+.chrome .x:hover { background: rgba(0, 0, 0, 0.3); }
+
+/* ---------- widget previews ---------- */
+
+.wp {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  color: var(--fg);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+}
+
+/* label with no bind: just centered/aligned text, no box (like firmware) */
+.wp-label-text {
+  display: flex;
+  align-items: center;
+  font-size: 22px;
+  color: var(--fg);
+  padding: 4px;
+}
+
+/* label with bind: tile with optional caption + value */
+.wp-label-tile {
+  position: relative;
+  padding: 8px;
+}
+.wp-caption {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: normal;
+}
+.wp-value-stacked {
+  font-size: 22px;
+  font-weight: 500;
+  margin-top: 2px;
+}
+.wp-value-centered {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 500;
+}
+
+/* generic dark tile (toggle, bar, button) */
+.wp-tile {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 8px;
+  position: relative;
+}
+
+/* toggle */
+.wp-switch {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  width: 50px;
+  height: 26px;
+  border-radius: 13px;
+  background: #30363d;
+}
+.wp-switch.wp-switch-on { background: var(--accent); }
+.wp-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #c9d1d9;
+  transition: left 0.15s;
+}
+.wp-switch-on .wp-switch-knob { left: 27px; }
+
+/* arc */
+.wp-arc {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.wp-arc-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.wp-arc-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.wp-arc-caption {
+  font-size: 11px;
+  color: var(--muted);
+}
+.wp-arc-value {
+  font-size: 22px;
+  font-weight: 500;
+}
+
+/* bar */
+.wp-bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.wp-bar-value {
+  font-size: 16px;
+  color: var(--fg);
+}
+.wp-bar-track {
+  background: #30363d;
+  border-radius: 2px;
+  position: absolute;
+}
+.wp-bar-track.horizontal {
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  height: 16px;
+}
+.wp-bar-track.vertical {
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  top: 28px;
+}
+.wp-bar-fill {
+  background: var(--accent);
+  border-radius: 2px;
+  height: 100%;
+}
+.wp-bar-track.vertical .wp-bar-fill {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+}
+
+/* button */
+.wp-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wp-button-label {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 
 .tile-kind { text-transform: uppercase; letter-spacing: 0.5px; }
@@ -195,7 +405,8 @@ button.x { padding: 0 6px; font-size: 14px; }
   list-style: none;
   padding: 0;
   margin: 4px 0 0;
-  max-height: 300px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   font-family: ui-monospace, monospace;
   font-size: 11px;
