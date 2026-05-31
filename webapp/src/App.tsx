@@ -257,13 +257,27 @@ export function App(): JSX.Element {
   }, [paths, pathFilter])
 
   const onLayoutChange = (next: GLLayout[]): void => {
-    setScreen((prev) => ({
-      ...prev,
-      widgets: prev.widgets.map((w) => {
+    setScreen((prev) => {
+      // RGL fires onLayoutChange on mount and on every grid update,
+      // including no-op renders where the incoming layout matches what
+      // we already have (modulo grid quantization). Without this guard,
+      // each Load would write quantized coordinates back into state —
+      // breaking widget spacing that the user designed in pixel units
+      // (e.g. toggle y=40,h=50 + toggle y=100 snaps to row 2 / row 4
+      // and the saved JSON drifts on every load).
+      let changed = false
+      const widgets = prev.widgets.map((w) => {
         const g = next.find((n) => n.i === w.id)
-        return g ? applyGrid(w, g, colPxW) : w
+        if (!g) return w
+        const cur = widgetToGrid(w, colPxW)
+        if (g.x === cur.x && g.y === cur.y && g.w === cur.w && g.h === cur.h) {
+          return w
+        }
+        changed = true
+        return applyGrid(w, g, colPxW)
       })
-    }))
+      return changed ? { ...prev, widgets } : prev
+    })
   }
 
   /* ---- screen management ---- */
