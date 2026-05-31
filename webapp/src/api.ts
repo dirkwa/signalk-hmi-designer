@@ -180,20 +180,27 @@ export interface PathMeta {
   }
 }
 
-/** SignalK-conventional hex color for a zone state. */
+/** Hex color for a zone state.
+ *
+ *  Maritime-helm escalation palette: green safe → yellow notice → orange
+ *  act-soon → red act-now → purple critical/system-down. Bumps every SK
+ *  state one severity step warmer than the SK spec defaults so a glance
+ *  at the helm reads like a traffic light. Matches firmware
+ *  `color_for_state` in [src/jlp/zone_registry.cpp].
+ */
 export function colorForZoneState(s: ZoneState): string {
   switch (s) {
     case 'nominal':
     case 'normal':
-      return '#3fb950'
+      return '#3fb950' // green
     case 'alert':
-      return '#58a6ff'
+      return '#d29922' // yellow
     case 'warn':
-      return '#d29922'
+      return '#db6d28' // orange
     case 'alarm':
-      return '#db6d28'
+      return '#f85149' // red
     case 'emergency':
-      return '#f85149'
+      return '#a371f7' // purple
   }
 }
 
