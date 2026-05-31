@@ -165,6 +165,11 @@ export function App(): JSX.Element {
   const [pathZones, setPathZones] = useState<Map<string, MetaZone[]>>(
     () => new Map()
   )
+  // SK meta `description` per bound path; LabelPreview prefers this
+  // over the formatted value (matches firmware behaviour).
+  const [pathDescriptions, setPathDescriptions] = useState<Map<string, string>>(
+    () => new Map()
+  )
   const [shotUrl, setShotUrl] = useState<string | null>(null)
   const [shotOpacity, setShotOpacity] = useState<number>(0.5)
   const [shotErr, setShotErr] = useState<string | null>(null)
@@ -192,10 +197,18 @@ export function App(): JSX.Element {
             for (const w of scr.widgets) {
               if (!w.bind) continue
               void fetchPathMeta(w.bind).then((meta) => {
-                if (meta?.zones && meta.zones.length > 0) {
+                if (!meta) return
+                if (meta.zones && meta.zones.length > 0) {
                   setPathZones((prev) => {
                     const next = new Map(prev)
                     next.set(w.bind!, meta.zones!)
+                    return next
+                  })
+                }
+                if (meta.description) {
+                  setPathDescriptions((prev) => {
+                    const next = new Map(prev)
+                    next.set(w.bind!, meta.description!)
                     return next
                   })
                 }
@@ -422,6 +435,13 @@ export function App(): JSX.Element {
           return next
         })
       }
+      if (meta.description) {
+        setPathDescriptions((prev) => {
+          const next = new Map(prev)
+          next.set(path, meta.description!)
+          return next
+        })
+      }
       const d = deriveDisplayDefaults(meta)
       if (!d) return
       setScreen((prev) => ({
@@ -504,10 +524,18 @@ export function App(): JSX.Element {
       for (const w of scr.widgets) {
         if (!w.bind) continue
         void fetchPathMeta(w.bind).then((meta) => {
-          if (meta?.zones && meta.zones.length > 0) {
+          if (!meta) return
+          if (meta.zones && meta.zones.length > 0) {
             setPathZones((prev) => {
               const next = new Map(prev)
               next.set(w.bind!, meta.zones!)
+              return next
+            })
+          }
+          if (meta.description) {
+            setPathDescriptions((prev) => {
+              const next = new Map(prev)
+              next.set(w.bind!, meta.description!)
               return next
             })
           }
@@ -998,6 +1026,9 @@ export function App(): JSX.Element {
                       w={w}
                       value={w.bind ? skValues.get(w.bind) : undefined}
                       zones={w.bind ? pathZones.get(w.bind) : undefined}
+                      description={
+                        w.bind ? pathDescriptions.get(w.bind) : undefined
+                      }
                     />
                   </div>
                 )

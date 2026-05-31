@@ -8,10 +8,12 @@ interface PreviewProps {
   w: Widget
   value?: SkValue | undefined
   zones?: MetaZone[] | undefined
+  /** SK meta `description` for the bound path. Some widgets (label)
+   *  prefer this over the formatted numeric value. */
+  description?: string | undefined
 }
 
 const ACCENT = '#58a6ff'
-const FG = '#e6edf3'
 const TILE_BG = '#161b22'
 
 /** Returns the zone color for the widget's current displayed value,
@@ -42,10 +44,17 @@ function zoneColor(
  * present in `value`; otherwise "—" placeholder, matching what the
  * device shows before its first delta lands.
  */
-export function WidgetPreview({ w, value, zones }: PreviewProps): JSX.Element {
+export function WidgetPreview({
+  w,
+  value,
+  zones,
+  description
+}: PreviewProps): JSX.Element {
   switch (w.type) {
     case 'label':
-      return <LabelPreview w={w} value={value} zones={zones} />
+      return (
+        <LabelPreview w={w} value={value} zones={zones} description={description} />
+      )
     case 'toggle':
       return <TogglePreview w={w} value={value} zones={zones} />
     case 'arc':
@@ -93,26 +102,30 @@ function fillFraction(
 function LabelPreview({
   w,
   value,
-  zones
+  zones,
+  description
 }: {
   w: Extract<Widget, { type: 'label' }>
   value: SkValue | undefined
   zones: MetaZone[] | undefined
+  description: string | undefined
 }) {
   const hasBind = Boolean(w.bind)
   const hasCaption = Boolean(w.label)
-  const valueColor = zoneColor(w, value, zones, FG)
   if (!hasBind) {
     return <div className="wp wp-label-text">{w.label ?? ''}</div>
   }
+  // Prefer the SK meta description over the formatted value — matches
+  // firmware behaviour. A label bound to a switch state then shows the
+  // operator-facing relay name ("BMS DnC") instead of "1.0".
+  const body = description ?? formatValue(w, value)
+  // Zone-tint the tile bg, same as toggle / arc / bar.
+  const bg = zoneColor(w, value, zones, TILE_BG)
   return (
-    <div className="wp wp-label-tile">
+    <div className="wp wp-label-tile" style={{ background: bg }}>
       {hasCaption && <div className="wp-caption">{w.label}</div>}
-      <div
-        className={hasCaption ? 'wp-value-stacked' : 'wp-value-centered'}
-        style={{ color: valueColor }}
-      >
-        {formatValue(w, value)}
+      <div className={hasCaption ? 'wp-value-stacked' : 'wp-value-centered'}>
+        {body}
       </div>
     </div>
   )
