@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -326,6 +326,64 @@ export function App(): JSX.Element {
     }))
     if (selectedId === id) setSelectedId(null)
   }
+
+  /* ---- copy/paste clipboard (in-memory, session-scoped) ---- */
+  const clipboardRef = useRef<Widget | null>(null)
+
+  const copySelected = (): void => {
+    const w = screen.widgets.find((x) => x.id === selectedId)
+    if (!w) return
+    clipboardRef.current = w
+  }
+
+  const pasteFromClipboard = (): void => {
+    const src = clipboardRef.current
+    if (!src) return
+    setScreen((prev) => {
+      const kind = src.type
+      // Keep the existing id-prefix scheme so the paste fits in.
+      const id = freshId(kind, prev.widgets)
+      // Offset the paste so it doesn't overlap the source exactly.
+      // 20 device-px down+right is enough to be obviously a copy
+      // without leaving the visible area.
+      const pasted = {
+        ...src,
+        id,
+        x: src.x + 20,
+        y: src.y + 20
+      } as Widget
+      setSelectedId(id)
+      return { ...prev, widgets: [...prev.widgets, pasted] }
+    })
+  }
+
+  // Wire Ctrl/Cmd-C / Ctrl/Cmd-V to copy/paste. Ignore when the user
+  // is typing in an input/textarea so native text copy/paste still
+  // works in the property panels and path filter.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const t = e.target as HTMLElement | null
+      const tag = t?.tagName
+      const isEditable =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        (t?.isContentEditable ?? false)
+      if (isEditable) return
+      if (e.key === 'c' || e.key === 'C') {
+        if (!selectedId) return
+        e.preventDefault()
+        copySelected()
+      } else if (e.key === 'v' || e.key === 'V') {
+        if (!clipboardRef.current) return
+        e.preventDefault()
+        pasteFromClipboard()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [selectedId, screen.widgets, activeIdx])
 
   const updateWidget = (id: string, patch: Partial<Widget>): void => {
     setScreen((prev) => ({
