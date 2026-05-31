@@ -32,7 +32,10 @@
     "webapp": {
       "name": "HMI Designer",
       "description": "Drag-and-drop layout designer for runtime-rendering HMI displays"
-    }
+    },
+    "recommends": [
+      "signalk-n2k-switching"
+    ]
   },
   "files": [
     "plugin/**/*",
