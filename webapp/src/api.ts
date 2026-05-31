@@ -197,14 +197,24 @@ export function colorForZoneState(s: ZoneState): string {
   }
 }
 
-/** Find the zone matching a display-space value; null if none. */
+/** Find the zone matching a display-space value; null if none.
+ *
+ * SK convention is half-open [lower, upper). That makes a "point
+ * zone" where lower === upper (commonly authored for bool/int state
+ * paths like a switch position — alert at 0, nominal at 1) match
+ * nothing. Treat that case as equality on the point instead.
+ */
 export function matchZone(
   zones: MetaZone[] | undefined,
   displayValue: number
 ): MetaZone | null {
   if (!zones) return null
   for (const z of zones) {
-    if (displayValue >= z.lower && displayValue < z.upper) return z
+    if (z.lower === z.upper) {
+      if (displayValue === z.lower) return z
+    } else if (displayValue >= z.lower && displayValue < z.upper) {
+      return z
+    }
   }
   return null
 }
