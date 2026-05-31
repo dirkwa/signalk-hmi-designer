@@ -16,20 +16,25 @@ interface PreviewProps {
 const ACCENT = '#58a6ff'
 const TILE_BG = '#161b22'
 
-/** Returns the zone color for the widget's current displayed value,
- *  or fallback when no zones/no match. */
+/** Returns the zone color for the widget's current raw SK value,
+ *  or fallback when no zones/no match.
+ *
+ *  SK metadata zones are in RAW units (e.g. SOC zones use 0..1 ratio
+ *  even when the widget displays 0..100 %). Match against the raw
+ *  value, NOT the display-scaled one — otherwise zones never hit when
+ *  the path has a non-identity displayUnits formula.
+ */
 function zoneColor(
-  w: Widget,
+  _w: Widget,
   value: SkValue | undefined,
   zones: MetaZone[] | undefined,
   fallback: string
 ): string {
-  if (!zones || typeof value !== 'number') return fallback
-  const d = 'display' in w ? w.display : undefined
-  const scale = d?.scale ?? 1
-  const offset = d?.offset ?? 0
-  const display = value * scale + offset
-  const z = matchZone(zones, display)
+  if (!zones) return fallback
+  // Bools come in as true/false; coerce to 0/1 so matchZone works.
+  const raw = typeof value === 'boolean' ? (value ? 1 : 0) : value
+  if (typeof raw !== 'number') return fallback
+  const z = matchZone(zones, raw)
   return z ? colorForZoneState(z.state) : fallback
 }
 
