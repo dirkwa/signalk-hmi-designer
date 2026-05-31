@@ -160,9 +160,16 @@ function ArcPreview({
   const indicatorEnd = (start + sweep * fill) % 360
   const indicatorColor = zoneColor(w, value, zones, ACCENT)
 
+  // Device firmware squares the arc to min(w,h) and centers it.
+  // preserveAspectRatio="xMidYMid meet" replicates that: the SVG
+  // keeps a circular arc and centers it within the user's box.
   return (
     <div className="wp wp-arc">
-      <svg viewBox="0 0 100 100" className="wp-arc-svg">
+      <svg
+        viewBox="0 0 100 100"
+        className="wp-arc-svg"
+        preserveAspectRatio="xMidYMid meet"
+      >
         <ArcPath start={start} end={end} color="#30363d" width={8} />
         <ArcPath
           start={start}

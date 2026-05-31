@@ -193,6 +193,14 @@ button.x { padding: 0 6px; font-size: 14px; }
   text-transform: uppercase;
 }
 
+/* Force GridLayout to fill the full canvas-content area so widgets
+   can be dragged into the lower portion. Without this, RGL auto-
+   sizes based on the lowest-placed widget and leaves no drop zone
+   below it. */
+.grid.react-grid-layout {
+  height: 100% !important;
+}
+
 .grid-wrap {
   background: var(--bg);
   /* width / height / background-size are set inline from the device's
@@ -259,14 +267,19 @@ button.x { padding: 0 6px; font-size: 14px; }
   height: 100%;
   box-sizing: border-box;
   color: var(--fg);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  /* Match the device's LVGL Montserrat. Google's web font is the same
+     family, so widget previews render close to the panel's pixels. */
+  font-family: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
   overflow: hidden;
 }
 
 /* label with no bind: just centered/aligned text, no box (like firmware) */
+/* Match LVGL label positioning: text anchored top-left within the
+   widget's bounding box (lv_label_set_text + lv_obj_set_pos puts the
+   box at (x,y) and renders text at the top of that box). */
 .wp-label-text {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   font-size: 22px;
   color: var(--fg);
   padding: 4px;
@@ -275,7 +288,7 @@ button.x { padding: 0 6px; font-size: 14px; }
 /* label with bind: tile with optional caption + value */
 .wp-label-tile {
   position: relative;
-  padding: 8px;
+  padding: 4px;
 }
 .wp-caption {
   font-size: 11px;
@@ -293,8 +306,9 @@ button.x { padding: 0 6px; font-size: 14px; }
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 4px;
   font-size: 22px;
   font-weight: 500;
 }

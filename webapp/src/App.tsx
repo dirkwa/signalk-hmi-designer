@@ -38,11 +38,18 @@ const ROW_PX_H = ROW_HEIGHT
 const DEFAULT_DISPLAY_W = 1024
 const DEFAULT_DISPLAY_H = 600
 
-let nextId = 1
-const genId = (prefix: string): string => `${prefix}-${nextId++}`
+/** Returns the first `<prefix>-<n>` not already present in `existing`. */
+function freshId(prefix: string, existing: ReadonlyArray<{ id: string }>): string {
+  const taken = new Set(existing.map((w) => w.id))
+  for (let n = 1; n < 1_000_000; n++) {
+    const candidate = `${prefix}-${n}`
+    if (!taken.has(candidate)) return candidate
+  }
+  throw new Error('genId exhausted (somehow)')
+}
 
-function defaultWidget(kind: WidgetKind): Widget {
-  const id = genId(kind)
+function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>): Widget {
+  const id = freshId(kind, existing)
   const base = {
     id,
     x: 0,
@@ -233,9 +240,13 @@ export function App(): JSX.Element {
   }
 
   const addWidget = (kind: WidgetKind): void => {
-    const w = defaultWidget(kind)
-    setScreen((prev) => ({ ...prev, widgets: [...prev.widgets, w] }))
-    setSelectedId(w.id)
+    // Pick a fresh id based on the *current* set so we don't collide
+    // with anything already in the layout (e.g. loaded from server).
+    setScreen((prev) => {
+      const w = defaultWidget(kind, prev.widgets)
+      setSelectedId(w.id)
+      return { ...prev, widgets: [...prev.widgets, w] }
+    })
   }
 
   const removeWidget = (id: string): void => {
@@ -643,6 +654,22 @@ export function App(): JSX.Element {
               cols={COLS}
               rowHeight={ROW_HEIGHT}
               width={displayW}
+              // Force the grid container to fill the full canvas height
+              // (display minus the status overlay strip) so widgets can
+              // be dragged into the lower portion. Without this RGL
+              // auto-sizes to the lowest existing widget's row, which
+              // leaves no drop zone below.
+              autoSize={false}
+              maxRows={Math.floor(
+                (displayH - (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0)) /
+                  ROW_HEIGHT
+              )}
+              // RGL defaults margin=[10,10] and containerPadding=[10,10]
+              // which shift everything down by ~10-20px per widget — the
+              // canvas no longer reflects 1:1 with the device. Zero both
+              // so JSON pixel coords map directly to canvas pixels.
+              margin={[0, 0]}
+              containerPadding={[0, 0]}
               // The designer must NOT auto-reflow: a drag of one
               // widget should never displace another. allowOverlap lets
               // tiles park anywhere; compactType=null disables gravity;
