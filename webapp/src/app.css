@@ -74,6 +74,22 @@ header {
 
 .topbar-hello code { color: var(--fg); }
 
+/* File ops toolbar pinned to the far right of the header. */
+.topbar-files {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+.topbar-files button.danger {
+  background: #3a1f1f;
+  border-color: #5a2a2a;
+  color: #f85149;
+}
+.topbar-files button.danger:hover {
+  background: #5a2a2a;
+}
+
 .topbar-toggle {
   display: flex;
   align-items: center;

@@ -329,6 +329,7 @@ export function App(): JSX.Element {
 
   /* ---- copy/paste clipboard (in-memory, session-scoped) ---- */
   const clipboardRef = useRef<Widget | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const copySelected = (): void => {
     const w = screen.widgets.find((x) => x.id === selectedId)
@@ -475,6 +476,101 @@ export function App(): JSX.Element {
     setShotErr(null)
   }
 
+  /* ---- file ops: save / load / export / import / clear ---- */
+
+  const [fileMsg, setFileMsg] = useState<string | null>(null)
+
+  // Replaces the entire designer state (screens + statusOverlay) with
+  // a loaded Layout. Also re-fetches zones for every bound path so
+  // colors appear immediately.
+  const adoptLayout = (l: Layout): void => {
+    setScreens(l.screens.length > 0 ? l.screens : [
+      { id: 'main', title: 'Main', widgets: [] }
+    ])
+    setActiveIdx(0)
+    setSelectedId(null)
+    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
+    for (const scr of l.screens) {
+      for (const w of scr.widgets) {
+        if (!w.bind) continue
+        void fetchPathMeta(w.bind).then((meta) => {
+          if (meta?.zones && meta.zones.length > 0) {
+            setPathZones((prev) => {
+              const next = new Map(prev)
+              next.set(w.bind!, meta.zones!)
+              return next
+            })
+          }
+        })
+      }
+    }
+  }
+
+  const onSave = async (): Promise<void> => {
+    setFileMsg(null)
+    try {
+      await saveLayout(layoutDoc)
+      setFileMsg('saved to SK server')
+    } catch (e) {
+      setFileMsg(`save failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  const onLoad = async (): Promise<void> => {
+    setFileMsg(null)
+    if (!confirm('Load saved layout from SK server? Unsaved edits will be lost.')) return
+    try {
+      const saved = await loadSavedLayout()
+      if (!saved) {
+        setFileMsg('no saved layout on server')
+        return
+      }
+      adoptLayout(saved)
+      setFileMsg('loaded from SK server')
+    } catch (e) {
+      setFileMsg(`load failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  const onExport = (): void => {
+    const blob = new Blob([JSON.stringify(layoutDoc, null, 2)], {
+      type: 'application/json'
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const safeName = (layoutDoc.name || 'layout').replace(/[^a-z0-9_-]/gi, '_')
+    a.href = url
+    a.download = `${safeName}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    setFileMsg(`exported ${safeName}.json`)
+  }
+
+  const onImportFile = async (file: File): Promise<void> => {
+    setFileMsg(null)
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text) as Layout
+      if (parsed.schema !== 1 || !Array.isArray(parsed.screens)) {
+        throw new Error('not a valid layout (schema 1 with screens[])')
+      }
+      adoptLayout(parsed)
+      setFileMsg(`imported ${file.name}`)
+    } catch (e) {
+      setFileMsg(`import failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  const onClear = (): void => {
+    if (!confirm('Clear the canvas? All screens and widgets will be removed.')) return
+    setScreens([{ id: 'main', title: 'Main', widgets: [] }])
+    setActiveIdx(0)
+    setSelectedId(null)
+    setFileMsg('cleared')
+  }
+
   const onPush = async (): Promise<void> => {
     setPushErr(null)
     setPushResult(null)
@@ -592,6 +688,43 @@ export function App(): JSX.Element {
                 : (pushResult.err ?? 'push failed')}
             </span>
           )}
+          {fileMsg && <span className="muted small">{fileMsg}</span>}
+        </div>
+        <div className="topbar-files">
+          <button onClick={() => void onSave()} title="Save to SK server">
+            Save
+          </button>
+          <button onClick={() => void onLoad()} title="Load from SK server">
+            Load
+          </button>
+          <button onClick={onExport} title="Download JSON file">
+            Export
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            title="Upload a JSON file"
+          >
+            Import
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) void onImportFile(f)
+              // Reset so picking the same file again still fires onChange.
+              e.target.value = ''
+            }}
+          />
+          <button
+            onClick={onClear}
+            title="Reset to a single empty screen"
+            className="danger"
+          >
+            Clear
+          </button>
         </div>
       </header>
 
