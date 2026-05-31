@@ -87,6 +87,81 @@ header {
   margin: 0;
 }
 
+/* Inline-editable screen title in the canvas h3. */
+.screen-title {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: normal;
+  text-transform: uppercase;
+  padding: 2px 4px;
+  border-radius: 3px;
+  width: 200px;
+}
+.screen-title:hover {
+  border-color: #30363d;
+}
+.screen-title:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* Bottom tab strip inside grid-wrap — mirrors what the device
+   renders. Pinned at bottom; tap to switch screens. */
+.canvas-tabs {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #161b22;
+  border-top: 1px solid #30363d;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  box-sizing: border-box;
+  z-index: 50;
+}
+.canvas-tabs .tab {
+  flex: 1;
+  background: #21262d;
+  color: var(--fg);
+  border: none;
+  border-radius: 4px;
+  font-size: 16px;
+  cursor: pointer;
+  position: relative;
+}
+.canvas-tabs .tab.active {
+  background: var(--accent);
+  color: #0d1117;
+}
+.canvas-tabs .tab .tab-x {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.canvas-tabs .tab .tab-x:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Below-canvas tools row: add-tab button + hint text. */
+.canvas-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.canvas-tools .small {
+  font-size: 11px;
+}
+
 /* Dummy status strip in the canvas — mirrors the device's
    StatusOverlay so the designer's geometry stays honest. */
 .canvas-overlay {
@@ -323,27 +398,45 @@ button.x { padding: 0 6px; font-size: 14px; }
 }
 
 /* toggle */
+/* Toggle widget: caption left-aligned, switch right-aligned, both
+   vertically centered. Matches the firmware layout (LV_ALIGN_LEFT_MID
+   for the label, LV_ALIGN_RIGHT_MID for the switch). */
+.wp-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px;
+}
+.wp-toggle-label {
+  font-size: 18px;
+  color: var(--fg);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .wp-switch {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  width: 50px;
-  height: 26px;
-  border-radius: 13px;
+  position: relative;
+  width: 60px;
+  height: 30px;
+  border-radius: 15px;
   background: #30363d;
+  flex-shrink: 0;
 }
 .wp-switch.wp-switch-on { background: var(--accent); }
 .wp-switch-knob {
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: #c9d1d9;
   transition: left 0.15s;
 }
-.wp-switch-on .wp-switch-knob { left: 27px; }
+.wp-switch-on .wp-switch-knob { left: 33px; }
 
 /* arc */
 .wp-arc {

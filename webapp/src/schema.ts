@@ -84,6 +84,10 @@ export interface Layout {
    *  at the top of the screen. Default true (matches firmware
    *  behavior since v0.1). Set false for a clean operational helm. */
   status_overlay?: boolean
+  /** Height in device pixels of the bottom tab strip used to switch
+   *  between screens. Only relevant when `screens.length > 1`;
+   *  ignored otherwise. Default 56 px. */
+  tab_strip_height?: number
   theme?: { bg?: string; fg?: string; accent?: string }
   screens: Screen[]
 }
@@ -91,6 +95,9 @@ export interface Layout {
 /** Height in device pixels of the status overlay strip (matches the
  *  firmware constant kStripHeight in status_overlay.cpp). */
 export const STATUS_OVERLAY_HEIGHT = 28
+
+/** Default bottom tab-strip height when not set on the layout. */
+export const DEFAULT_TAB_STRIP_HEIGHT = 56
 
 /** Returned by the device's GET /hello — capability descriptor. */
 export interface HelloResponse {

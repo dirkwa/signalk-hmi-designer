@@ -5,7 +5,7 @@ import 'react-resizable/css/styles.css'
 
 import { WidgetPreview } from './WidgetPreview'
 import { useSkValues } from './skStream'
-import { STATUS_OVERLAY_HEIGHT } from './schema'
+import { DEFAULT_TAB_STRIP_HEIGHT, STATUS_OVERLAY_HEIGHT } from './schema'
 
 import {
   deriveDisplayDefaults,
@@ -132,13 +132,36 @@ export function App(): JSX.Element {
   const [paths, setPaths] = useState<string[]>([])
   const [pathFilter, setPathFilter] = useState<string>('')
 
-  const [screen, setScreen] = useState<Screen>({
+  const [screens, setScreens] = useState<Screen[]>([
+    { id: 'main', title: 'Main', widgets: [] }
+  ])
+  const [activeIdx, setActiveIdx] = useState<number>(0)
+  const [statusOverlay, setStatusOverlay] = useState<boolean>(true)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // The currently-active screen. Reads use this; writes use setActive().
+  // Multi-screen layouts: tab strip at the bottom of canvas switches.
+  const screen = screens[activeIdx] ?? screens[0] ?? {
     id: 'main',
     title: 'Main',
     widgets: []
-  })
-  const [statusOverlay, setStatusOverlay] = useState<boolean>(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  }
+
+  // Replace the active screen with a new value. Helper because every
+  // legacy site that did setScreen((prev) => ...) now needs to splice
+  // into the screens array at activeIdx.
+  const setScreen = (
+    update: Screen | ((prev: Screen) => Screen)
+  ): void => {
+    setScreens((prev) => {
+      const cur = prev[activeIdx] ?? prev[0]
+      if (!cur) return prev
+      const next = typeof update === 'function' ? update(cur) : update
+      const out = [...prev]
+      out[activeIdx] = next
+      return out
+    })
+  }
   const [pathZones, setPathZones] = useState<Map<string, MetaZone[]>>(
     () => new Map()
   )
@@ -155,29 +178,29 @@ export function App(): JSX.Element {
       .catch(() => setPaths([]))
   }, [])
 
-  // Restore previously-saved layout on first mount. The saved doc
-  // wraps the screen we render; v1 only supports a single screen so
-  // we lift screens[0] out. Future versions need a screens-array
-  // state shape.
+  // Restore previously-saved layout on first mount. Hydrates all
+  // screens (multi-screen support); zones are pre-fetched for every
+  // bound path across every screen.
   useEffect(() => {
     void loadSavedLayout()
       .then((saved) => {
         if (!saved) return
-        const first = saved.screens[0]
-        if (first) {
-          setScreen(first)
-          // Hydrate zones for any bound path in the restored layout.
-          for (const w of first.widgets) {
-            if (!w.bind) continue
-            void fetchPathMeta(w.bind).then((meta) => {
-              if (meta?.zones && meta.zones.length > 0) {
-                setPathZones((prev) => {
-                  const next = new Map(prev)
-                  next.set(w.bind!, meta.zones!)
-                  return next
-                })
-              }
-            })
+        if (saved.screens.length > 0) {
+          setScreens(saved.screens)
+          setActiveIdx(0)
+          for (const scr of saved.screens) {
+            for (const w of scr.widgets) {
+              if (!w.bind) continue
+              void fetchPathMeta(w.bind).then((meta) => {
+                if (meta?.zones && meta.zones.length > 0) {
+                  setPathZones((prev) => {
+                    const next = new Map(prev)
+                    next.set(w.bind!, meta.zones!)
+                    return next
+                  })
+                }
+              })
+            }
           }
         }
         if (saved.status_overlay !== undefined) {
@@ -194,9 +217,9 @@ export function App(): JSX.Element {
       schema: 1,
       name: 'Designer',
       status_overlay: statusOverlay,
-      screens: [screen]
+      screens
     }),
-    [screen, statusOverlay]
+    [screens, statusOverlay]
   )
 
   // Canvas dimensions track the connected device's /hello.display
@@ -205,6 +228,10 @@ export function App(): JSX.Element {
   const displayW = hello?.display?.w ?? DEFAULT_DISPLAY_W
   const displayH = hello?.display?.h ?? DEFAULT_DISPLAY_H
   const colPxW = displayW / COLS
+  // Tab strip is rendered only when there's more than one screen, to
+  // match the firmware (which hides the strip in that case).
+  const tabStripHeight = DEFAULT_TAB_STRIP_HEIGHT
+  const showTabStrip = screens.length > 1
 
   const grid = useMemo(
     () => screen.widgets.map((w) => widgetToGrid(w, colPxW)),
@@ -215,10 +242,10 @@ export function App(): JSX.Element {
   // the set of bound paths changes.
   const boundPaths = useMemo(
     () =>
-      screen.widgets
-        .map((w) => w.bind ?? '')
+      screens
+        .flatMap((s) => s.widgets.map((w) => w.bind ?? ''))
         .filter((p): p is string => p.length > 0),
-    [screen.widgets]
+    [screens]
   )
   const skValues = useSkValues(boundPaths)
   const selected = screen.widgets.find((w) => w.id === selectedId) ?? null
@@ -237,6 +264,49 @@ export function App(): JSX.Element {
         return g ? applyGrid(w, g, colPxW) : w
       })
     }))
+  }
+
+  /* ---- screen management ---- */
+
+  const addScreen = (): void => {
+    setScreens((prev) => {
+      const taken = new Set(prev.map((s) => s.id))
+      let n = prev.length + 1
+      let id = `screen${n}`
+      while (taken.has(id)) {
+        n++
+        id = `screen${n}`
+      }
+      const next = [...prev, { id, title: `Tab ${n}`, widgets: [] }]
+      setActiveIdx(next.length - 1)
+      return next
+    })
+    setSelectedId(null)
+  }
+
+  const removeScreen = (idx: number): void => {
+    setScreens((prev) => {
+      if (prev.length <= 1) return prev // keep at least one
+      const next = prev.filter((_, i) => i !== idx)
+      // Keep active in range; prefer the screen to the left.
+      setActiveIdx((cur) => {
+        if (cur > idx) return cur - 1
+        if (cur === idx) return Math.max(0, idx - 1)
+        return cur
+      })
+      return next
+    })
+    setSelectedId(null)
+  }
+
+  const renameScreen = (idx: number, title: string): void => {
+    setScreens((prev) => {
+      const cur = prev[idx]
+      if (!cur) return prev
+      const out = [...prev]
+      out[idx] = { ...cur, title }
+      return out
+    })
   }
 
   const addWidget = (kind: WidgetKind): void => {
@@ -604,7 +674,18 @@ export function App(): JSX.Element {
 
         {/* ---- center: canvas ---- */}
         <main className="canvas">
-          <h3>{screen.title} canvas</h3>
+          <h3>
+            <input
+              className="screen-title"
+              value={screen.title}
+              onChange={(e) => renameScreen(activeIdx, e.target.value)}
+              title="Edit screen title"
+            />
+            <span className="muted">
+              {' '}
+              · screen {activeIdx + 1}/{screens.length}
+            </span>
+          </h3>
           {/* Deselect on click bubbles up to the app root. */}
           <div
             className="grid-wrap"
@@ -645,7 +726,7 @@ export function App(): JSX.Element {
                 top: statusOverlay ? STATUS_OVERLAY_HEIGHT : 0,
                 left: 0,
                 right: 0,
-                bottom: 0
+                bottom: showTabStrip ? tabStripHeight : 0
               }}
             >
             <GridLayout
@@ -661,7 +742,9 @@ export function App(): JSX.Element {
               // leaves no drop zone below.
               autoSize={false}
               maxRows={Math.floor(
-                (displayH - (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0)) /
+                (displayH -
+                  (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
+                  (showTabStrip ? tabStripHeight : 0)) /
                   ROW_HEIGHT
               )}
               // RGL defaults margin=[10,10] and containerPadding=[10,10]
@@ -719,6 +802,50 @@ export function App(): JSX.Element {
               })}
             </GridLayout>
             </div>
+            {showTabStrip && (
+              <div
+                className="canvas-tabs"
+                style={{ height: `${tabStripHeight}px` }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {screens.map((s, i) => (
+                  <button
+                    key={s.id}
+                    className={`tab ${i === activeIdx ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveIdx(i)
+                      setSelectedId(null)
+                    }}
+                    title={s.id}
+                  >
+                    {s.title || s.id}
+                    {screens.length > 1 && i === activeIdx && (
+                      <span
+                        className="tab-x"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (
+                            confirm(`Delete screen "${s.title}"?`)
+                          )
+                            removeScreen(i)
+                        }}
+                        title="Delete this screen"
+                      >
+                        ×
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="canvas-tools" onClick={(e) => e.stopPropagation()}>
+            <button onClick={addScreen}>+ tab</button>
+            {screens.length > 1 && (
+              <span className="muted small">
+                Tab strip shown on device when more than 1 screen exists
+              </span>
+            )}
           </div>
         </main>
 

@@ -132,8 +132,8 @@ function TogglePreview({
   const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value
   const bg = zoneColor(w, numericValue, zones, TILE_BG)
   return (
-    <div className="wp wp-tile" style={{ background: bg }}>
-      {w.label && <div className="wp-caption">{w.label}</div>}
+    <div className="wp wp-tile wp-toggle" style={{ background: bg }}>
+      {w.label && <div className="wp-toggle-label">{w.label}</div>}
       <div className={`wp-switch ${on ? 'wp-switch-on' : 'wp-switch-off'}`}>
         <div className="wp-switch-knob" />
       </div>
