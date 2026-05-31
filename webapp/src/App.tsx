@@ -256,29 +256,25 @@ export function App(): JSX.Element {
     return paths.filter((p) => p.toLowerCase().includes(f))
   }, [paths, pathFilter])
 
-  const onLayoutChange = (next: GLLayout[]): void => {
-    setScreen((prev) => {
-      // RGL fires onLayoutChange on mount and on every grid update,
-      // including no-op renders where the incoming layout matches what
-      // we already have (modulo grid quantization). Without this guard,
-      // each Load would write quantized coordinates back into state —
-      // breaking widget spacing that the user designed in pixel units
-      // (e.g. toggle y=40,h=50 + toggle y=100 snaps to row 2 / row 4
-      // and the saved JSON drifts on every load).
-      let changed = false
-      const widgets = prev.widgets.map((w) => {
-        const g = next.find((n) => n.i === w.id)
-        if (!g) return w
-        const cur = widgetToGrid(w, colPxW)
-        if (g.x === cur.x && g.y === cur.y && g.w === cur.w && g.h === cur.h) {
-          return w
-        }
-        changed = true
-        return applyGrid(w, g, colPxW)
-      })
-      return changed ? { ...prev, widgets } : prev
-    })
+  // Apply RGL geometry back to state ONLY for the single widget the
+  // user just dragged or resized. Uses onDragStop / onResizeStop
+  // (not onLayoutChange) because the latter fires on mount, remount,
+  // and any layout-prop change — including tab switches, paste, load
+  // — and writing those back to state grid-quantizes pixel positions,
+  // drifting widgets over time.
+  const onDragStop = (
+    _layout: GLLayout[],
+    _oldItem: GLLayout,
+    newItem: GLLayout
+  ): void => {
+    setScreen((prev) => ({
+      ...prev,
+      widgets: prev.widgets.map((w) =>
+        w.id === newItem.i ? applyGrid(w, newItem, colPxW) : w
+      )
+    }))
   }
+  const onResizeStop = onDragStop
 
   /* ---- screen management ---- */
 
@@ -969,7 +965,8 @@ export function App(): JSX.Element {
               // selected widgets), so unselected widgets behave as
               // pure click targets.
               draggableHandle=".chrome"
-              onLayoutChange={onLayoutChange}
+              onDragStop={onDragStop}
+              onResizeStop={onResizeStop}
             >
               {screen.widgets.map((w) => {
                 const isSel = selectedId === w.id
