@@ -31,6 +31,14 @@ export interface WidgetCommon {
   label?: string
   bind?: string
   display?: DisplayConfig
+  /** Optional fixed background color (hex e.g. "#f85149"). When the
+   *  widget binds a path and the path's SK zones match the current
+   *  value, the zone color wins. Use these for purely action-coloured
+   *  widgets (STOP=red, ACK=yellow) that have no SK feedback loop. */
+  bg_color?: string
+  /** Optional fixed foreground color (value text / arc indicator).
+   *  Same zone-wins precedence as bg_color. */
+  fg_color?: string
 }
 
 export interface LabelWidget extends WidgetCommon {

@@ -23,6 +23,10 @@ const TILE_BG = '#161b22'
  *  even when the widget displays 0..100 %). Match against the raw
  *  value, NOT the display-scaled one — otherwise zones never hit when
  *  the path has a non-identity displayUnits formula.
+ *
+ *  Fallback precedence: widget's optional `bg_color`/`fg_color` (passed
+ *  here as `fallback`) > theme default. This is how STOP=red works
+ *  even when its bound path has no zones.
  */
 function zoneColor(
   _w: Widget,
@@ -36,6 +40,17 @@ function zoneColor(
   if (typeof raw !== 'number') return fallback
   const z = matchZone(zones, raw)
   return z ? colorForZoneState(z.state) : fallback
+}
+
+/** Pick the bg fallback: widget's bg_color override, else theme bg. */
+function bgFallback(w: Widget): string {
+  return w.bg_color ?? TILE_BG
+}
+
+/** Pick the fg fallback: widget's fg_color override, else theme accent
+ *  (used for arc indicator + bar fill color). */
+function fgFallback(w: Widget): string {
+  return w.fg_color ?? ACCENT
 }
 
 /**
@@ -118,16 +133,26 @@ function LabelPreview({
   const hasBind = Boolean(w.bind)
   const hasCaption = Boolean(w.label)
   if (!hasBind) {
-    return <div className="wp wp-label-text">{w.label ?? ''}</div>
+    const staticStyle: CSSProperties = {}
+    if (w.bg_color) staticStyle.background = w.bg_color
+    if (w.fg_color) staticStyle.color = w.fg_color
+    return (
+      <div className="wp wp-label-text" style={staticStyle}>
+        {w.label ?? ''}
+      </div>
+    )
   }
   // Prefer the SK meta description over the formatted value — matches
   // firmware behaviour. A label bound to a switch state then shows the
   // operator-facing relay name ("BMS DnC") instead of "1.0".
   const body = description ?? formatValue(w, value)
-  // Zone-tint the tile bg, same as toggle / arc / bar.
-  const bg = zoneColor(w, value, zones, TILE_BG)
+  // Zone-tint the tile bg, same as toggle / arc / bar. Falls back to
+  // the widget's bg_color override, then theme default.
+  const bg = zoneColor(w, value, zones, bgFallback(w))
+  const tileStyle: CSSProperties = { background: bg }
+  if (w.fg_color) tileStyle.color = w.fg_color
   return (
-    <div className="wp wp-label-tile" style={{ background: bg }}>
+    <div className="wp wp-label-tile" style={tileStyle}>
       {hasCaption && <div className="wp-caption">{w.label}</div>}
       <div className={hasCaption ? 'wp-value-stacked' : 'wp-value-centered'}>
         {body}
@@ -148,9 +173,11 @@ function TogglePreview({
   const on = value === true || value === 1
   // For zones we treat the bool/int as a numeric value.
   const numericValue = typeof value === 'boolean' ? (value ? 1 : 0) : value
-  const bg = zoneColor(w, numericValue, zones, TILE_BG)
+  const bg = zoneColor(w, numericValue, zones, bgFallback(w))
+  const tileStyle: CSSProperties = { background: bg }
+  if (w.fg_color) tileStyle.color = w.fg_color
   return (
-    <div className="wp wp-tile wp-toggle" style={{ background: bg }}>
+    <div className="wp wp-tile wp-toggle" style={tileStyle}>
       {w.label && <div className="wp-toggle-label">{w.label}</div>}
       <div className={`wp-switch ${on ? 'wp-switch-on' : 'wp-switch-off'}`}>
         <div className="wp-switch-knob" />
@@ -176,7 +203,7 @@ function ArcPreview({
   let sweep = end - start
   if (sweep <= 0) sweep += 360
   const indicatorEnd = (start + sweep * fill) % 360
-  const indicatorColor = zoneColor(w, value, zones, ACCENT)
+  const indicatorColor = zoneColor(w, value, zones, fgFallback(w))
 
   // Device firmware squares the arc to min(w,h) and centers it.
   // preserveAspectRatio="xMidYMid meet" replicates that: the SVG
@@ -250,13 +277,16 @@ function BarPreview({
   const fill =
     fillFraction(value, w.min, w.max, d?.scale ?? 1, d?.offset ?? 0) ?? 0.3
   const fillPct = Math.round(fill * 100)
-  const fillColor = zoneColor(w, value, zones, ACCENT)
+  const fillColor = zoneColor(w, value, zones, fgFallback(w))
   const fillStyle: CSSProperties = {
     background: fillColor,
     ...(w.vertical ? { height: `${fillPct}%` } : { width: `${fillPct}%` })
   }
+  const tileStyle: CSSProperties = {}
+  if (w.bg_color) tileStyle.background = w.bg_color
+  if (w.fg_color) tileStyle.color = w.fg_color
   return (
-    <div className="wp wp-tile">
+    <div className="wp wp-tile" style={tileStyle}>
       <div className="wp-bar-head">
         {w.label && <span className="wp-caption">{w.label}</span>}
         <span className="wp-bar-value">{formatValue(w, value)}</span>

@@ -897,6 +897,52 @@ export function App(): JSX.Element {
                   </label>
                 </>
               )}
+              {/* ---- Colors (applicable to every widget kind) ---- */}
+              <div className="hr" />
+              <label>
+                bg color
+                <input
+                  type="color"
+                  value={selected.bg_color ?? '#161b22'}
+                  onChange={(e) =>
+                    updateWidget(selected.id, { bg_color: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    updateWidget(selected.id, { bg_color: undefined })
+                  }
+                  title="Clear bg color override (use theme default)"
+                >
+                  clear
+                </button>
+              </label>
+              <label>
+                fg color
+                <input
+                  type="color"
+                  value={selected.fg_color ?? '#e6edf3'}
+                  onChange={(e) =>
+                    updateWidget(selected.id, { fg_color: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    updateWidget(selected.id, { fg_color: undefined })
+                  }
+                  title="Clear fg color override (use theme default)"
+                >
+                  clear
+                </button>
+              </label>
+              <div className="muted small">
+                Zone state colors always win when the bound path has a
+                matching zone — these are fallbacks.
+              </div>
             </div>
           )}
         </aside>
