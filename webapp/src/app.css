@@ -376,32 +376,37 @@ button.x { padding: 0 6px; font-size: 14px; }
   padding: 4px;
 }
 
-/* label with bind: tile with optional caption + value */
+/* label with bind: tile with optional caption + value.
+ * Matches the firmware label layout:
+ *  - caption (when present) flushed top-left in small muted text
+ *  - body text centered on the remaining space when there is a caption,
+ *    or centered on the whole tile when there is no caption
+ */
 .wp-label-tile {
   position: relative;
   padding: 4px;
 }
 .wp-caption {
+  position: absolute;
+  top: 4px;
+  left: 4px;
   font-size: 11px;
   color: var(--muted);
   text-transform: none;
   letter-spacing: 0;
   font-weight: normal;
 }
-.wp-value-stacked {
-  font-size: 22px;
-  font-weight: 500;
-  margin-top: 2px;
-}
+.wp-value-stacked,
 .wp-value-centered {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: center;
   padding: 4px;
   font-size: 22px;
   font-weight: 500;
+  text-align: center;
 }
 
 /* generic dark tile (toggle, bar, button) */
