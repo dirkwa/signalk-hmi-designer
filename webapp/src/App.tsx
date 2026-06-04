@@ -185,6 +185,20 @@ export function App(): JSX.Element {
   >(undefined)
   const [showNotifModal, setShowNotifModal] = useState<boolean>(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Which bind field is currently focused. The path picker on the
+  // right routes its click to whichever target is focused:
+  //  - 'widget'    -> top-level widget bind (default, single-bind widgets)
+  //  - {barIdx: N} -> sub-bar bind inside a bargroup
+  // Reset to 'widget' whenever the selection changes.
+  const [bindTarget, setBindTarget] = useState<
+    'widget' | { barIdx: number }
+  >('widget')
+  // Reset bindTarget when the user picks a different widget so a
+  // path click after re-selection doesn't accidentally go to the
+  // last-focused sub-bar of the previous selection.
+  useEffect(() => {
+    setBindTarget('widget')
+  }, [selectedId])
 
   // The currently-active screen. Reads use this; writes use setActive().
   // Multi-screen layouts: tab strip at the bottom of canvas switches.
@@ -980,6 +994,7 @@ export function App(): JSX.Element {
                 bind (SK path)
                 <input
                   value={selected.bind ?? ''}
+                  onFocus={() => setBindTarget('widget')}
                   onChange={(e) => applyBind(selected.id, e.target.value)}
                 />
               </label>
@@ -1130,7 +1145,8 @@ export function App(): JSX.Element {
                         <input
                           value={b.bind}
                           placeholder="signalk.path"
-                          title="bind"
+                          title="bind (click in here, then click a path on the right)"
+                          onFocus={() => setBindTarget({ barIdx: i })}
                           onChange={(e) => {
                             const next = [...selected.bars]
                             next[i] = { ...b, bind: e.target.value }
@@ -1703,9 +1719,49 @@ export function App(): JSX.Element {
               <li
                 key={p}
                 onClick={() => {
-                  if (selected) applyBind(selected.id, p)
+                  if (!selected) return
+                  // Route the click to whichever bind input the
+                  // user last focused: widget-level for most kinds,
+                  // a specific sub-bar inside a bargroup.
+                  if (
+                    bindTarget !== 'widget' &&
+                    selected.type === 'bargroup'
+                  ) {
+                    const i = bindTarget.barIdx
+                    const target = selected.bars[i]
+                    if (target) {
+                      const next = [...selected.bars]
+                      next[i] = { ...target, bind: p }
+                      updateWidget(selected.id, { bars: next })
+                      // Pre-fetch meta so zone tinting + description
+                      // are live for the sub-bar's bound path too.
+                      void fetchPathMeta(p).then((meta) => {
+                        if (!meta) return
+                        if (meta.zones && meta.zones.length > 0) {
+                          setPathZones((prev) => {
+                            const nextMap = new Map(prev)
+                            nextMap.set(p, meta.zones!)
+                            return nextMap
+                          })
+                        }
+                        if (meta.description) {
+                          setPathDescriptions((prev) => {
+                            const nextMap = new Map(prev)
+                            nextMap.set(p, meta.description!)
+                            return nextMap
+                          })
+                        }
+                      })
+                      return
+                    }
+                  }
+                  applyBind(selected.id, p)
                 }}
-                title="click to bind to selected widget"
+                title={
+                  bindTarget !== 'widget' && selected?.type === 'bargroup'
+                    ? `click to bind to sub-bar #${bindTarget.barIdx + 1}`
+                    : 'click to bind to selected widget'
+                }
               >
                 {p}
               </li>
