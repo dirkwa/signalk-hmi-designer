@@ -86,7 +86,12 @@ function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>
         display: { unit: '', scale: 1, offset: 0, decimals: 0 }
       }
     case 'button':
-      return { ...base, type: 'button', action: { put: { value: 1 } } }
+      return {
+        ...base,
+        type: 'button',
+        bind: '',
+        press_value: 1
+      }
   }
 }
 
@@ -510,10 +515,43 @@ export function App(): JSX.Element {
 
   const [fileMsg, setFileMsg] = useState<string | null>(null)
 
+  /** One-shot migration for layouts saved under v0.1 schema:
+   *
+   *  - button widgets with `action: {put: {value, path?}}` are
+   *    rewritten to `{bind: path ?? bind, press_value: value}`.
+   *
+   *  Non-button widgets pass through. New widgets authored in v0.2+
+   *  never use the old shape.
+   */
+  const migrateLayout = (l: Layout): Layout => {
+    return {
+      ...l,
+      screens: l.screens.map((s) => ({
+        ...s,
+        widgets: s.widgets.map((w) => {
+          if (w.type !== 'button') return w
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacy = w as any
+          if (legacy.action?.put && legacy.press_value === undefined) {
+            const { action: _drop, ...rest } = legacy
+            void _drop
+            return {
+              ...rest,
+              bind: legacy.action.put.path ?? w.bind ?? '',
+              press_value: legacy.action.put.value
+            } as Widget
+          }
+          return w
+        })
+      }))
+    }
+  }
+
   // Replaces the entire designer state (screens + statusOverlay) with
   // a loaded Layout. Also re-fetches zones for every bound path so
   // colors appear immediately.
-  const adoptLayout = (l: Layout): void => {
+  const adoptLayout = (raw: Layout): void => {
+    const l = migrateLayout(raw)
     setScreens(l.screens.length > 0 ? l.screens : [
       { id: 'main', title: 'Main', widgets: [] }
     ])
@@ -929,6 +967,80 @@ export function App(): JSX.Element {
                       + add band
                     </button>
                   </fieldset>
+                </>
+              )}
+              {selected.type === 'button' && (
+                <>
+                  <label>
+                    press value
+                    <input
+                      value={String(selected.press_value ?? '')}
+                      onChange={(e) => {
+                        const t = e.target.value
+                        const n = Number(t)
+                        const v: boolean | number | string =
+                          t === 'true'
+                            ? true
+                            : t === 'false'
+                              ? false
+                              : !isNaN(n) && t !== ''
+                                ? n
+                                : t
+                        updateWidget(selected.id, { press_value: v })
+                      }}
+                    />
+                  </label>
+                  <label>
+                    release value
+                    <input
+                      value={
+                        selected.release_value === undefined
+                          ? ''
+                          : String(selected.release_value)
+                      }
+                      placeholder="(no release PUT)"
+                      onChange={(e) => {
+                        const t = e.target.value
+                        if (t === '') {
+                          updateWidget(selected.id, {
+                            release_value: undefined
+                          })
+                          return
+                        }
+                        const n = Number(t)
+                        const v: boolean | number | string =
+                          t === 'true'
+                            ? true
+                            : t === 'false'
+                              ? false
+                              : !isNaN(n)
+                                ? n
+                                : t
+                        updateWidget(selected.id, { release_value: v })
+                      }}
+                    />
+                  </label>
+                  <label>
+                    hold ms
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={selected.hold_ms ?? 0}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        updateWidget(selected.id, {
+                          hold_ms: n > 0 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <div className="muted small">
+                    With release_value set, this is a momentary button
+                    (PUT on press, PUT on release). Without, it's a
+                    one-shot action. hold_ms requires sustained press
+                    before any PUT fires — safety latch for STOP, etc.
+                  </div>
                 </>
               )}
               {(selected.type === 'label' ||

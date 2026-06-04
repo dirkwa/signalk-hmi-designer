@@ -14,13 +14,6 @@ export interface DisplayConfig {
   decimals?: number
 }
 
-export interface PutAction {
-  put: {
-    value: boolean | number | string
-    path?: string
-  }
-}
-
 export interface WidgetCommon {
   type: WidgetKind
   id: string
@@ -82,9 +75,23 @@ export interface BarWidget extends WidgetCommon {
   vertical?: boolean
 }
 
+/** Momentary / hold-to-act button.
+ *
+ *  - `bind` (required): the SK path to PUT.
+ *  - `press_value`: value sent on press.
+ *  - `release_value` (optional): value sent on release. Omit for a
+ *    one-shot action like ACK.
+ *  - `hold_ms` (optional): when set, the press_value PUT only fires
+ *    after the button has been held this long; releasing earlier
+ *    cancels with no PUT. Use as a safety latch for STOP, anchor
+ *    release, etc.
+ */
 export interface ButtonWidget extends WidgetCommon {
   type: 'button'
-  action: PutAction
+  bind: string
+  press_value: boolean | number | string
+  release_value?: boolean | number | string
+  hold_ms?: number
 }
 
 export type Widget =

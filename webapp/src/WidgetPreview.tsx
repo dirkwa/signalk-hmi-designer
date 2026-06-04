@@ -391,9 +391,15 @@ function BarPreview({
 }
 
 function ButtonPreview({ w }: { w: Extract<Widget, { type: 'button' }> }) {
+  const tileStyle: CSSProperties = {}
+  if (w.bg_color) tileStyle.background = w.bg_color
+  if (w.fg_color) tileStyle.color = w.fg_color
   return (
-    <div className="wp wp-tile wp-button">
+    <div className="wp wp-tile wp-button" style={tileStyle}>
       <div className="wp-button-label">{w.label ?? 'button'}</div>
+      {w.hold_ms ? (
+        <div className="wp-button-hint">hold {w.hold_ms} ms</div>
+      ) : null}
     </div>
   )
 }
