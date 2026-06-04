@@ -131,6 +131,26 @@ export interface Screen {
   widgets: Widget[]
 }
 
+/** Notification states ordered by ascending severity. Matches the
+ *  SignalK convention. */
+export type NotificationState =
+  | 'alert'
+  | 'warn'
+  | 'alarm'
+  | 'emergency'
+
+/** Layout-level alert-overlay config. The overlay is a runtime
+ *  artifact (modal that pops above the active screen when SK
+ *  delivers a qualifying notification); the designer doesn't
+ *  preview it on the canvas. */
+export interface NotificationsConfig {
+  enabled: boolean
+  /** Only notifications with state >= min_state trigger the modal. */
+  min_state: NotificationState
+  /** v1: always "modal" (locked in the designer). */
+  ack_method?: 'modal'
+}
+
 export interface Layout {
   schema: 1
   name: string
@@ -143,6 +163,9 @@ export interface Layout {
    *  ignored otherwise. Default 56 px. */
   tab_strip_height?: number
   theme?: { bg?: string; fg?: string; accent?: string }
+  /** Layout-level alert-overlay configuration. Default behaviour
+   *  when omitted: enabled, min_state="alarm", modal ack. */
+  notifications?: NotificationsConfig
   screens: Screen[]
 }
 

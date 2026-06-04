@@ -165,6 +165,10 @@ export function App(): JSX.Element {
   ])
   const [activeIdx, setActiveIdx] = useState<number>(0)
   const [statusOverlay, setStatusOverlay] = useState<boolean>(true)
+  const [notifConfig, setNotifConfig] = useState<
+    Layout['notifications'] | undefined
+  >(undefined)
+  const [showNotifModal, setShowNotifModal] = useState<boolean>(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // The currently-active screen. Reads use this; writes use setActive().
@@ -248,6 +252,9 @@ export function App(): JSX.Element {
         if (saved.status_overlay !== undefined) {
           setStatusOverlay(saved.status_overlay)
         }
+        if (saved.notifications !== undefined) {
+          setNotifConfig(saved.notifications)
+        }
       })
       .catch(() => {
         /* nothing to restore — leave the empty default */
@@ -259,9 +266,10 @@ export function App(): JSX.Element {
       schema: 1,
       name: 'Designer',
       status_overlay: statusOverlay,
+      ...(notifConfig ? { notifications: notifConfig } : {}),
       screens
     }),
-    [screens, statusOverlay]
+    [screens, statusOverlay, notifConfig]
   )
 
   // Canvas dimensions track the connected device's /hello.display
@@ -581,6 +589,7 @@ export function App(): JSX.Element {
     setActiveIdx(0)
     setSelectedId(null)
     if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
+    if (l.notifications !== undefined) setNotifConfig(l.notifications)
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
         for (const p of bindsOf(w)) {
@@ -826,8 +835,85 @@ export function App(): JSX.Element {
           >
             Clear
           </button>
+          <button
+            onClick={() => setShowNotifModal(true)}
+            title="Configure the device alert overlay"
+          >
+            Notifications
+          </button>
         </div>
       </header>
+
+      {showNotifModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowNotifModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Alert overlay</h3>
+            <p className="muted small">
+              Layout-level setting. The device pops a full-screen modal
+              above the active screen whenever SK publishes a
+              notification with state &gt;= min state. Tapping ACK on
+              the device PUTs <code>state: "normal"</code> to the
+              notification path. Defaults: enabled, alarm.
+            </p>
+            <label>
+              <input
+                type="checkbox"
+                checked={notifConfig?.enabled ?? true}
+                onChange={(e) =>
+                  setNotifConfig({
+                    enabled: e.target.checked,
+                    min_state: notifConfig?.min_state ?? 'alarm',
+                    ack_method: 'modal'
+                  })
+                }
+              />
+              enabled
+            </label>
+            <label>
+              min state
+              <select
+                value={notifConfig?.min_state ?? 'alarm'}
+                onChange={(e) =>
+                  setNotifConfig({
+                    enabled: notifConfig?.enabled ?? true,
+                    min_state: e.target.value as NonNullable<
+                      Layout['notifications']
+                    >['min_state'],
+                    ack_method: 'modal'
+                  })
+                }
+              >
+                <option value="alert">alert</option>
+                <option value="warn">warn</option>
+                <option value="alarm">alarm</option>
+                <option value="emergency">emergency</option>
+              </select>
+            </label>
+            <label>
+              ack method
+              <select value="modal" disabled>
+                <option value="modal">modal</option>
+              </select>
+            </label>
+            <div className="modal-actions">
+              <button
+                className="ghost"
+                onClick={() => {
+                  setNotifConfig(undefined)
+                  setShowNotifModal(false)
+                }}
+                title="Drop the notifications block (firmware defaults apply)"
+              >
+                clear
+              </button>
+              <button onClick={() => setShowNotifModal(false)}>done</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="cols">
         {/* ---- left column: palette + selected props ---- */}
