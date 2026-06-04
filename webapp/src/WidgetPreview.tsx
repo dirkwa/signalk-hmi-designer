@@ -11,6 +11,10 @@ interface PreviewProps {
   /** SK meta `description` for the bound path. Some widgets (label)
    *  prefer this over the formatted numeric value. */
   description?: string | undefined
+  /** Per-path live values for multi-bind widgets (e.g. bargroup). */
+  valueMap?: Map<string, SkValue>
+  /** Per-path zone arrays for multi-bind widgets. */
+  zonesMap?: Map<string, MetaZone[]>
 }
 
 const ACCENT = '#58a6ff'
@@ -68,7 +72,9 @@ export function WidgetPreview({
   w,
   value,
   zones,
-  description
+  description,
+  valueMap,
+  zonesMap
 }: PreviewProps): JSX.Element {
   switch (w.type) {
     case 'label':
@@ -81,6 +87,14 @@ export function WidgetPreview({
       return <ArcPreview w={w} value={value} zones={zones} />
     case 'bar':
       return <BarPreview w={w} value={value} zones={zones} />
+    case 'bargroup':
+      return (
+        <BarGroupPreview
+          w={w}
+          valueMap={valueMap ?? new Map()}
+          zonesMap={zonesMap ?? new Map()}
+        />
+      )
     case 'button':
       return <ButtonPreview w={w} />
   }
@@ -385,6 +399,75 @@ function BarPreview({
       </div>
       <div className={`wp-bar-track ${w.vertical ? 'vertical' : 'horizontal'}`}>
         <div className="wp-bar-fill" style={fillStyle} />
+      </div>
+    </div>
+  )
+}
+
+function BarGroupPreview({
+  w,
+  valueMap,
+  zonesMap
+}: {
+  w: Extract<Widget, { type: 'bargroup' }>
+  valueMap: Map<string, SkValue>
+  zonesMap: Map<string, MetaZone[]>
+}) {
+  const tileStyle: CSSProperties = {}
+  if (w.bg_color) tileStyle.background = w.bg_color
+  if (w.fg_color) tileStyle.color = w.fg_color
+  return (
+    <div className="wp wp-tile wp-bargroup" style={tileStyle}>
+      {w.label && <div className="wp-caption wp-bargroup-caption">{w.label}</div>}
+      <div className="wp-bargroup-bars">
+        {w.bars.map((bar, i) => {
+          const value = bar.bind ? valueMap.get(bar.bind) : undefined
+          const zones = bar.bind ? zonesMap.get(bar.bind) : undefined
+          const d = bar.display
+          const fill =
+            fillFraction(
+              value,
+              bar.min,
+              bar.max,
+              d?.scale ?? 1,
+              d?.offset ?? 0
+            ) ?? 0
+          const fillPct = Math.round(fill * 100)
+          // Re-use the same zoneColor logic by faking a widget-like
+          // object — bargroup's bg_color/fg_color aren't relevant
+          // per-bar, only the bar's own zone state matters.
+          const fakeWidget = {
+            ...w,
+            display: bar.display
+          } as Widget
+          const fillColor = zoneColor(fakeWidget, value, zones, ACCENT)
+          // Pretty value for the label.
+          const valueText = (() => {
+            const d2 = bar.display
+            const unit = d2?.unit ?? ''
+            if (typeof value !== 'number') return unit ? `— ${unit}` : '—'
+            const scale = d2?.scale ?? 1
+            const offset = d2?.offset ?? 0
+            const decimals = d2?.decimals ?? 0
+            const v = value * scale + offset
+            return unit ? `${v.toFixed(decimals)} ${unit}` : v.toFixed(decimals)
+          })()
+          return (
+            <div className="wp-bargroup-cell" key={i}>
+              <div className="wp-bargroup-bar-track">
+                <div
+                  className="wp-bargroup-bar-fill"
+                  style={{
+                    height: `${fillPct}%`,
+                    background: fillColor
+                  }}
+                />
+              </div>
+              <div className="wp-bargroup-bar-label">{bar.label}</div>
+              <div className="wp-bargroup-bar-value">{valueText}</div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

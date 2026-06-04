@@ -38,6 +38,17 @@ const ROW_PX_H = ROW_HEIGHT
 const DEFAULT_DISPLAY_W = 1024
 const DEFAULT_DISPLAY_H = 600
 
+/** Every SK path a widget binds. Top-level for most kinds; the
+ *  sub-bars inside a bargroup each contribute their own path. */
+function bindsOf(w: Widget): string[] {
+  const out: string[] = []
+  if ('bind' in w && w.bind) out.push(w.bind)
+  if (w.type === 'bargroup') {
+    for (const b of w.bars) if (b.bind) out.push(b.bind)
+  }
+  return out
+}
+
 /** Returns the first `<prefix>-<n>` not already present in `existing`. */
 function freshId(prefix: string, existing: ReadonlyArray<{ id: string }>): string {
   const taken = new Set(existing.map((w) => w.id))
@@ -84,6 +95,18 @@ function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>
         min: 0,
         max: 100,
         display: { unit: '', scale: 1, offset: 0, decimals: 0 }
+      }
+    case 'bargroup':
+      return {
+        ...base,
+        type: 'bargroup',
+        w: 360,
+        h: 160,
+        bars: [
+          { label: 'A', bind: '', min: 0, max: 100 },
+          { label: 'B', bind: '', min: 0, max: 100 },
+          { label: 'C', bind: '', min: 0, max: 100 }
+        ]
       }
     case 'button':
       return {
@@ -200,24 +223,25 @@ export function App(): JSX.Element {
           setActiveIdx(0)
           for (const scr of saved.screens) {
             for (const w of scr.widgets) {
-              if (!w.bind) continue
-              void fetchPathMeta(w.bind).then((meta) => {
-                if (!meta) return
-                if (meta.zones && meta.zones.length > 0) {
-                  setPathZones((prev) => {
-                    const next = new Map(prev)
-                    next.set(w.bind!, meta.zones!)
-                    return next
-                  })
-                }
-                if (meta.description) {
-                  setPathDescriptions((prev) => {
-                    const next = new Map(prev)
-                    next.set(w.bind!, meta.description!)
-                    return next
-                  })
-                }
-              })
+              for (const p of bindsOf(w)) {
+                void fetchPathMeta(p).then((meta) => {
+                  if (!meta) return
+                  if (meta.zones && meta.zones.length > 0) {
+                    setPathZones((prev) => {
+                      const next = new Map(prev)
+                      next.set(p, meta.zones!)
+                      return next
+                    })
+                  }
+                  if (meta.description) {
+                    setPathDescriptions((prev) => {
+                      const next = new Map(prev)
+                      next.set(p, meta.description!)
+                      return next
+                    })
+                  }
+                })
+              }
             }
           }
         }
@@ -257,12 +281,11 @@ export function App(): JSX.Element {
   )
 
   // Live SK values for any bound widget. The hook re-subscribes when
-  // the set of bound paths changes.
+  // the set of bound paths changes. Includes top-level widget binds
+  // AND sub-bar binds inside bargroup widgets so per-bar tinting and
+  // value display work in the canvas preview.
   const boundPaths = useMemo(
-    () =>
-      screens
-        .flatMap((s) => s.widgets.map((w) => w.bind ?? ''))
-        .filter((p): p is string => p.length > 0),
+    () => screens.flatMap((s) => s.widgets.flatMap(bindsOf)),
     [screens]
   )
   const skValues = useSkValues(boundPaths)
@@ -560,24 +583,25 @@ export function App(): JSX.Element {
     if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
-        if (!w.bind) continue
-        void fetchPathMeta(w.bind).then((meta) => {
-          if (!meta) return
-          if (meta.zones && meta.zones.length > 0) {
-            setPathZones((prev) => {
-              const next = new Map(prev)
-              next.set(w.bind!, meta.zones!)
-              return next
-            })
-          }
-          if (meta.description) {
-            setPathDescriptions((prev) => {
-              const next = new Map(prev)
-              next.set(w.bind!, meta.description!)
-              return next
-            })
-          }
-        })
+        for (const p of bindsOf(w)) {
+          void fetchPathMeta(p).then((meta) => {
+            if (!meta) return
+            if (meta.zones && meta.zones.length > 0) {
+              setPathZones((prev) => {
+                const next = new Map(prev)
+                next.set(p, meta.zones!)
+                return next
+              })
+            }
+            if (meta.description) {
+              setPathDescriptions((prev) => {
+                const next = new Map(prev)
+                next.set(p, meta.description!)
+                return next
+              })
+            }
+          })
+        }
       }
     }
   }
@@ -670,13 +694,14 @@ export function App(): JSX.Element {
   }
 
   const availableKinds = useMemo<WidgetKind[]>(() => {
-    if (!hello) return ['label', 'toggle', 'arc', 'bar', 'button']
+    if (!hello) return ['label', 'toggle', 'arc', 'bar', 'bargroup', 'button']
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
         k === 'label' ||
         k === 'toggle' ||
         k === 'arc' ||
         k === 'bar' ||
+        k === 'bargroup' ||
         k === 'button'
     )
   }, [hello])
@@ -965,6 +990,84 @@ export function App(): JSX.Element {
                       }}
                     >
                       + add band
+                    </button>
+                  </fieldset>
+                </>
+              )}
+              {selected.type === 'bargroup' && (
+                <>
+                  <fieldset className="bands">
+                    <legend>bars</legend>
+                    {selected.bars.map((b, i) => (
+                      <div className="band-row" key={i}>
+                        <input
+                          value={b.label}
+                          title="label"
+                          onChange={(e) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, label: e.target.value }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <input
+                          value={b.bind}
+                          placeholder="signalk.path"
+                          title="bind"
+                          onChange={(e) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, bind: e.target.value }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <input
+                          type="number"
+                          value={b.min}
+                          title="min"
+                          onChange={(e) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, min: Number(e.target.value) }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <input
+                          type="number"
+                          value={b.max}
+                          title="max"
+                          onChange={(e) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, max: Number(e.target.value) }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            const next = selected.bars.filter(
+                              (_, j) => j !== i
+                            )
+                            // Keep at least one bar; refuse to drop the last.
+                            if (next.length === 0) return
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                          title="Remove bar"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        const next = [
+                          ...selected.bars,
+                          { label: '', bind: '', min: 0, max: 100 }
+                        ]
+                        updateWidget(selected.id, { bars: next })
+                      }}
+                    >
+                      + add bar
                     </button>
                   </fieldset>
                 </>
@@ -1283,11 +1386,23 @@ export function App(): JSX.Element {
                     )}
                     <WidgetPreview
                       w={w}
-                      value={w.bind ? skValues.get(w.bind) : undefined}
-                      zones={w.bind ? pathZones.get(w.bind) : undefined}
-                      description={
-                        w.bind ? pathDescriptions.get(w.bind) : undefined
+                      value={
+                        'bind' in w && w.bind
+                          ? skValues.get(w.bind)
+                          : undefined
                       }
+                      zones={
+                        'bind' in w && w.bind
+                          ? pathZones.get(w.bind)
+                          : undefined
+                      }
+                      description={
+                        'bind' in w && w.bind
+                          ? pathDescriptions.get(w.bind)
+                          : undefined
+                      }
+                      valueMap={skValues}
+                      zonesMap={pathZones}
                     />
                   </div>
                 )

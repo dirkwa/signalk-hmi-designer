@@ -5,7 +5,13 @@
 
 export const SCHEMA_VERSION = 1 as const
 
-export type WidgetKind = 'label' | 'toggle' | 'arc' | 'bar' | 'button'
+export type WidgetKind =
+  | 'label'
+  | 'toggle'
+  | 'arc'
+  | 'bar'
+  | 'bargroup'
+  | 'button'
 
 export interface DisplayConfig {
   unit?: string
@@ -75,6 +81,23 @@ export interface BarWidget extends WidgetCommon {
   vertical?: boolean
 }
 
+/** One bar inside a bargroup. Independent bind/range/display so each
+ *  bar can pull from a different SK path with its own units. */
+export interface BarGroupBar {
+  label: string
+  bind: string
+  min: number
+  max: number
+  display?: DisplayConfig
+}
+
+/** Group of N bars under a single caption. Each bar binds
+ *  independently; SK zones tint each bar individually. */
+export interface BarGroupWidget extends WidgetCommon {
+  type: 'bargroup'
+  bars: BarGroupBar[]
+}
+
 /** Momentary / hold-to-act button.
  *
  *  - `bind` (required): the SK path to PUT.
@@ -99,6 +122,7 @@ export type Widget =
   | ToggleWidget
   | ArcWidget
   | BarWidget
+  | BarGroupWidget
   | ButtonWidget
 
 export interface Screen {

@@ -527,6 +527,58 @@ button.x { padding: 0 6px; font-size: 14px; }
   width: 100%;
 }
 
+/* bargroup */
+.wp-bargroup {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+}
+.wp-bargroup-caption {
+  flex: 0 0 auto;
+  margin-bottom: 4px;
+}
+.wp-bargroup-bars {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+.wp-bargroup-cell {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+.wp-bargroup-bar-track {
+  flex: 1 1 auto;
+  position: relative;
+  background: #30363d;
+  border-radius: 3px;
+  overflow: hidden;
+  min-height: 0;
+}
+.wp-bargroup-bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--accent);
+}
+.wp-bargroup-bar-label {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  font-size: 10px;
+  text-align: center;
+  color: var(--muted);
+}
+.wp-bargroup-bar-value {
+  flex: 0 0 auto;
+  font-size: 11px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 /* button */
 .wp-button {
   display: flex;
