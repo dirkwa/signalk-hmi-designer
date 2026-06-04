@@ -4,7 +4,7 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
 import { WidgetPreview } from './WidgetPreview'
-import { useSkValues } from './skStream'
+import { useNotifications, useSkValues } from './skStream'
 import { DEFAULT_TAB_STRIP_HEIGHT, STATUS_OVERLAY_HEIGHT } from './schema'
 
 import {
@@ -114,6 +114,21 @@ function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>
         type: 'button',
         bind: '',
         press_value: 1
+      }
+    case 'list':
+      return {
+        ...base,
+        type: 'list',
+        w: 480,
+        h: 320,
+        bind: 'notifications',
+        max_rows: 8,
+        columns: [
+          { label: 'PATH', field: 'path', width: 220 },
+          { label: 'STATE', field: 'state', width: 80 },
+          { label: 'MSG', field: 'message', width: 180 }
+        ],
+        row_color_field: 'state'
       }
   }
 }
@@ -297,6 +312,21 @@ export function App(): JSX.Element {
     [screens]
   )
   const skValues = useSkValues(boundPaths)
+
+  // List widgets bound to the synthetic "notifications" path pull
+  // from a separate REST-poll source. Only enable the poll if at
+  // least one list widget needs it (avoids hammering the server
+  // when the layout doesn't use notifications at all).
+  const wantsNotifications = useMemo(
+    () =>
+      screens.some((s) =>
+        s.widgets.some(
+          (w) => w.type === 'list' && w.bind === 'notifications'
+        )
+      ),
+    [screens]
+  )
+  const notifications = useNotifications(wantsNotifications)
   const selected = screen.widgets.find((w) => w.id === selectedId) ?? null
 
   const filteredPaths = useMemo(() => {
@@ -703,7 +733,8 @@ export function App(): JSX.Element {
   }
 
   const availableKinds = useMemo<WidgetKind[]>(() => {
-    if (!hello) return ['label', 'toggle', 'arc', 'bar', 'bargroup', 'button']
+    if (!hello)
+      return ['label', 'toggle', 'arc', 'bar', 'bargroup', 'button', 'list']
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
         k === 'label' ||
@@ -711,7 +742,8 @@ export function App(): JSX.Element {
         k === 'arc' ||
         k === 'bar' ||
         k === 'bargroup' ||
-        k === 'button'
+        k === 'button' ||
+        k === 'list'
     )
   }, [hello])
 
@@ -1158,6 +1190,121 @@ export function App(): JSX.Element {
                   </fieldset>
                 </>
               )}
+              {selected.type === 'list' && (
+                <>
+                  <label>
+                    max rows
+                    <input
+                      type="number"
+                      min={1}
+                      value={selected.max_rows ?? 8}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          max_rows: Math.max(1, Number(e.target.value))
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    row height
+                    <input
+                      type="number"
+                      min={16}
+                      value={selected.row_height ?? 28}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          row_height: Math.max(16, Number(e.target.value))
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    row color field
+                    <input
+                      value={selected.row_color_field ?? ''}
+                      placeholder="state"
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          row_color_field: e.target.value || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <fieldset className="bands">
+                    <legend>columns</legend>
+                    {selected.columns.map((c, i) => (
+                      <div className="band-row" key={i}>
+                        <input
+                          value={c.label}
+                          title="header"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, label: e.target.value }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <input
+                          value={c.field}
+                          title="field (dotted path)"
+                          placeholder="path"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, field: e.target.value }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <input
+                          type="number"
+                          value={c.width ?? 100}
+                          title="width px"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, width: Number(e.target.value) }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <input
+                          value={c.format ?? ''}
+                          title="format"
+                          placeholder="%s"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, format: e.target.value || undefined }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            const next = selected.columns.filter(
+                              (_, j) => j !== i
+                            )
+                            if (next.length === 0) return
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                          title="Remove column"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        const next = [
+                          ...selected.columns,
+                          { label: '', field: '', width: 100 }
+                        ]
+                        updateWidget(selected.id, { columns: next })
+                      }}
+                    >
+                      + add column
+                    </button>
+                  </fieldset>
+                </>
+              )}
               {selected.type === 'button' && (
                 <>
                   <label>
@@ -1489,6 +1636,7 @@ export function App(): JSX.Element {
                       }
                       valueMap={skValues}
                       zonesMap={pathZones}
+                      notifications={notifications}
                     />
                   </div>
                 )

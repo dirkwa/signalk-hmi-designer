@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { fetchNotifications, type NotificationRow } from './api'
 
 type SkValue = number | string | boolean | null
 
@@ -84,4 +85,28 @@ export function useSkValues(paths: string[]): Map<string, SkValue> {
   }, [pathsKey])
 
   return values
+}
+
+/** Poll the SK notifications.* tree and expose a flat array of row
+ *  objects. The list widget binds to the synthetic `"notifications"`
+ *  path; firmware maintains the same registry from WS deltas, so the
+ *  designer poll only has to be fast enough that the operator sees
+ *  the canvas update before they finish a layout edit — 2 s is fine. */
+export function useNotifications(enabled: boolean): NotificationRow[] {
+  const [rows, setRows] = useState<NotificationRow[]>([])
+  useEffect(() => {
+    if (!enabled) return undefined
+    let cancelled = false
+    async function tick(): Promise<void> {
+      const next = await fetchNotifications()
+      if (!cancelled) setRows(next)
+    }
+    void tick()
+    const id = window.setInterval(() => void tick(), 2000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [enabled])
+  return rows
 }

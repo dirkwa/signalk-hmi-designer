@@ -1,6 +1,12 @@
 import type { CSSProperties, JSX } from 'react'
 import { Widget } from './schema'
-import { colorForZoneState, matchZone, type MetaZone } from './api'
+import {
+  colorForZoneState,
+  matchZone,
+  type MetaZone,
+  type NotificationRow,
+  type ZoneState
+} from './api'
 
 type SkValue = number | string | boolean | null
 
@@ -15,6 +21,9 @@ interface PreviewProps {
   valueMap?: Map<string, SkValue>
   /** Per-path zone arrays for multi-bind widgets. */
   zonesMap?: Map<string, MetaZone[]>
+  /** Live notification rows (polled from /signalk/v1/api/.../notifications)
+   *  for list widgets bound to the synthetic "notifications" path. */
+  notifications?: NotificationRow[]
 }
 
 const ACCENT = '#58a6ff'
@@ -74,7 +83,8 @@ export function WidgetPreview({
   zones,
   description,
   valueMap,
-  zonesMap
+  zonesMap,
+  notifications
 }: PreviewProps): JSX.Element {
   switch (w.type) {
     case 'label':
@@ -97,6 +107,8 @@ export function WidgetPreview({
       )
     case 'button':
       return <ButtonPreview w={w} />
+    case 'list':
+      return <ListPreview w={w} notifications={notifications ?? []} />
   }
 }
 
@@ -483,6 +495,126 @@ function ButtonPreview({ w }: { w: Extract<Widget, { type: 'button' }> }) {
       {w.hold_ms ? (
         <div className="wp-button-hint">hold {w.hold_ms} ms</div>
       ) : null}
+    </div>
+  )
+}
+
+/** Resolve a dotted `field` against a row object. */
+function readField(row: Record<string, unknown>, field: string): unknown {
+  let cur: unknown = row
+  for (const part of field.split('.')) {
+    if (cur === null || typeof cur !== 'object') return undefined
+    cur = (cur as Record<string, unknown>)[part]
+  }
+  return cur
+}
+
+/** Tiny printf subset for list cells:
+ *   - %s string
+ *   - %d integer
+ *   - %.Nf float
+ *   - %H:%M time (input is an ISO timestamp)
+ *  Everything else passes through. */
+function formatCell(template: string | undefined, raw: unknown): string {
+  if (raw === undefined || raw === null) return ''
+  if (!template) return String(raw)
+  // strftime-style %H:%M handling first.
+  if (template.includes('%H') || template.includes('%M')) {
+    const d = new Date(String(raw))
+    if (isNaN(d.getTime())) return String(raw)
+    const hh = String(d.getHours()).padStart(2, '0')
+    const mm = String(d.getMinutes()).padStart(2, '0')
+    return template.replace(/%H/g, hh).replace(/%M/g, mm)
+  }
+  // printf-style.
+  return template.replace(/%(?:\.(\d+))?([sdf])/g, (_, prec, kind) => {
+    if (kind === 's') return String(raw)
+    if (kind === 'd') return String(Math.trunc(Number(raw)))
+    if (kind === 'f') {
+      const n = Number(raw)
+      if (isNaN(n)) return String(raw)
+      return prec !== undefined ? n.toFixed(Number(prec)) : n.toString()
+    }
+    return ''
+  })
+}
+
+const VALID_STATES: ReadonlySet<string> = new Set([
+  'nominal',
+  'normal',
+  'alert',
+  'warn',
+  'alarm',
+  'emergency'
+])
+
+function ListPreview({
+  w,
+  notifications
+}: {
+  w: Extract<Widget, { type: 'list' }>
+  notifications: NotificationRow[]
+}) {
+  const tileStyle: CSSProperties = {}
+  if (w.bg_color) tileStyle.background = w.bg_color
+  if (w.fg_color) tileStyle.color = w.fg_color
+  const isNotifBind = w.bind === 'notifications'
+  const rows: Record<string, unknown>[] = isNotifBind
+    ? (notifications as unknown as Record<string, unknown>[])
+    : []
+  const max = w.max_rows ?? 8
+  const sliced = rows.slice(0, max)
+  return (
+    <div className="wp wp-tile wp-list" style={tileStyle}>
+      {w.label && <div className="wp-caption wp-list-caption">{w.label}</div>}
+      <table className="wp-list-table">
+        <thead>
+          <tr>
+            {w.columns.map((c, i) => (
+              <th
+                key={i}
+                style={c.width ? { width: `${c.width}px` } : undefined}
+              >
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sliced.length === 0 && (
+            <tr>
+              <td
+                colSpan={w.columns.length}
+                className="wp-list-empty"
+              >
+                {isNotifBind
+                  ? '(no pending notifications)'
+                  : '(empty)'}
+              </td>
+            </tr>
+          )}
+          {sliced.map((row, ri) => {
+            const stateRaw = w.row_color_field
+              ? readField(row, w.row_color_field)
+              : undefined
+            const state =
+              typeof stateRaw === 'string' &&
+              VALID_STATES.has(stateRaw.toLowerCase())
+                ? (stateRaw.toLowerCase() as ZoneState)
+                : null
+            const rowStyle: CSSProperties = state
+              ? { background: colorForZoneState(state), color: '#0d1117' }
+              : {}
+            return (
+              <tr key={ri} style={rowStyle}>
+                {w.columns.map((c, ci) => (
+                  <td key={ci}>{formatCell(c.format, readField(row, c.field))}</td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
