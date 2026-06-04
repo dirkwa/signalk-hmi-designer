@@ -103,14 +103,15 @@ header {
   margin: 0;
 }
 
-/* Inline-editable screen title in the canvas h3. */
+/* Inline-editable screen title in the canvas h3. Render the stored
+   value verbatim — uppercasing here would lie about what the device
+   actually displays. */
 .screen-title {
   background: transparent;
   border: 1px solid transparent;
   color: var(--fg);
   font-size: 13px;
   font-weight: normal;
-  text-transform: uppercase;
   padding: 2px 4px;
   border-radius: 3px;
   width: 200px;
