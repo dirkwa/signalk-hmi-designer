@@ -50,6 +50,15 @@ export interface ToggleWidget extends WidgetCommon {
   bind: string
 }
 
+/** Advisory color band on an arc widget. `from` and `to` are in the
+ *  arc's display-space (after `display.scale`/`offset`). Painted as
+ *  a thin ring behind the live indicator. */
+export interface ArcBand {
+  from: number
+  to: number
+  color: string
+}
+
 export interface ArcWidget extends WidgetCommon {
   type: 'arc'
   bind: string
@@ -57,6 +66,12 @@ export interface ArcWidget extends WidgetCommon {
   max: number
   start_angle?: number
   end_angle?: number
+  /** N evenly-spaced major tick marks around the arc; 0/omit = none. */
+  ticks?: number
+  /** Print min, max, and intermediate tick values around the arc. */
+  tick_labels?: boolean
+  /** Advisory colored bands painted as a ring behind the indicator. */
+  bands?: ArcBand[]
 }
 
 export interface BarWidget extends WidgetCommon {

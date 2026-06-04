@@ -198,12 +198,20 @@ function ArcPreview({
   const start = w.start_angle ?? 135
   const end = w.end_angle ?? 45
   const d = w.display
-  const fill =
-    fillFraction(value, w.min, w.max, d?.scale ?? 1, d?.offset ?? 0) ?? 0.3
+  const scale = d?.scale ?? 1
+  const offset = d?.offset ?? 0
+  const fill = fillFraction(value, w.min, w.max, scale, offset) ?? 0.3
   let sweep = end - start
   if (sweep <= 0) sweep += 360
   const indicatorEnd = (start + sweep * fill) % 360
   const indicatorColor = zoneColor(w, value, zones, fgFallback(w))
+
+  // Map a display-space value to an arc angle.
+  const angleFor = (displayValue: number): number => {
+    const t = (displayValue - w.min) / (w.max - w.min)
+    const c = Math.max(0, Math.min(1, t))
+    return (start + sweep * c) % 360
+  }
 
   // Device firmware squares the arc to min(w,h) and centers it.
   // preserveAspectRatio="xMidYMid meet" replicates that: the SVG
@@ -216,12 +224,34 @@ function ArcPreview({
         preserveAspectRatio="xMidYMid meet"
       >
         <ArcPath start={start} end={end} color="#30363d" width={8} />
+        {/* Advisory bands ring — painted BEHIND the indicator so the
+            indicator (zone-coloured live value) overlays them. */}
+        {w.bands?.map((b, i) => (
+          <ArcPath
+            key={`band-${i}`}
+            start={angleFor(Math.min(b.from, b.to))}
+            end={angleFor(Math.max(b.from, b.to))}
+            color={b.color}
+            width={4}
+          />
+        ))}
         <ArcPath
           start={start}
           end={indicatorEnd}
           color={indicatorColor}
           width={8}
         />
+        {/* Tick marks at evenly-spaced major intervals. */}
+        {w.ticks && w.ticks > 1 && (
+          <ArcTicks
+            start={start}
+            sweep={sweep}
+            count={w.ticks}
+            min={w.min}
+            max={w.max}
+            withLabels={w.tick_labels ?? false}
+          />
+        )}
       </svg>
       <div className="wp-arc-text">
         {w.label && <div className="wp-arc-caption">{w.label}</div>}
@@ -229,6 +259,68 @@ function ArcPreview({
       </div>
     </div>
   )
+}
+
+/** Major tick marks around an arc, optionally labelled with their
+ *  display values at min, midpoints, max. */
+function ArcTicks({
+  start,
+  sweep,
+  count,
+  min,
+  max,
+  withLabels
+}: {
+  start: number
+  sweep: number
+  count: number
+  min: number
+  max: number
+  withLabels: boolean
+}) {
+  const r_outer = 46
+  const r_inner = 42
+  const r_label = 36
+  const ticks: JSX.Element[] = []
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1)
+    const a = start + sweep * t
+    const rad = (a * Math.PI) / 180
+    const x1 = 50 + r_inner * Math.cos(rad)
+    const y1 = 50 + r_inner * Math.sin(rad)
+    const x2 = 50 + r_outer * Math.cos(rad)
+    const y2 = 50 + r_outer * Math.sin(rad)
+    ticks.push(
+      <line
+        key={`tick-${i}`}
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        stroke="#8b949e"
+        strokeWidth={1}
+      />
+    )
+    if (withLabels) {
+      const lx = 50 + r_label * Math.cos(rad)
+      const ly = 50 + r_label * Math.sin(rad)
+      const v = min + (max - min) * t
+      ticks.push(
+        <text
+          key={`tlabel-${i}`}
+          x={lx}
+          y={ly}
+          fontSize={5}
+          fill="#8b949e"
+          textAnchor="middle"
+          dominantBaseline="central"
+        >
+          {Math.round(v)}
+        </text>
+      )
+    }
+  }
+  return <>{ticks}</>
 }
 
 function ArcPath({

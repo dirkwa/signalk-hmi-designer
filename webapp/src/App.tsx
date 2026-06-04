@@ -830,6 +830,107 @@ export function App(): JSX.Element {
                   </label>
                 </>
               )}
+              {selected.type === 'arc' && (
+                <>
+                  <label>
+                    ticks
+                    <input
+                      type="number"
+                      min={0}
+                      value={selected.ticks ?? 0}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          ticks: Number(e.target.value) || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    tick labels
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selected.tick_labels)}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          tick_labels: e.target.checked || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <fieldset className="bands">
+                    <legend>bands</legend>
+                    {(selected.bands ?? []).map((b, i) => (
+                      <div className="band-row" key={i}>
+                        <input
+                          type="number"
+                          value={b.from}
+                          title="from"
+                          onChange={(e) => {
+                            const next = [...(selected.bands ?? [])]
+                            next[i] = { ...b, from: Number(e.target.value) }
+                            updateWidget(selected.id, { bands: next })
+                          }}
+                        />
+                        <input
+                          type="number"
+                          value={b.to}
+                          title="to"
+                          onChange={(e) => {
+                            const next = [...(selected.bands ?? [])]
+                            next[i] = { ...b, to: Number(e.target.value) }
+                            updateWidget(selected.id, { bands: next })
+                          }}
+                        />
+                        <input
+                          type="color"
+                          value={b.color}
+                          onChange={(e) => {
+                            const next = [...(selected.bands ?? [])]
+                            next[i] = { ...b, color: e.target.value }
+                            updateWidget(selected.id, { bands: next })
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            const next = (selected.bands ?? []).filter(
+                              (_, j) => j !== i
+                            )
+                            updateWidget(selected.id, {
+                              bands: next.length ? next : undefined
+                            })
+                          }}
+                          title="Remove band"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        const cur = selected.bands ?? []
+                        // Suggest a band spanning the upper third of
+                        // the range — useful "warn zone" default.
+                        const span = selected.max - selected.min
+                        const next = [
+                          ...cur,
+                          {
+                            from: selected.min + span * 0.7,
+                            to: selected.max,
+                            color: '#d29922'
+                          }
+                        ]
+                        updateWidget(selected.id, { bands: next })
+                      }}
+                    >
+                      + add band
+                    </button>
+                  </fieldset>
+                </>
+              )}
               {(selected.type === 'label' ||
                 selected.type === 'arc' ||
                 selected.type === 'bar') && (
