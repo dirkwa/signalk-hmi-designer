@@ -232,9 +232,11 @@ function ArcPreview({
   const indicatorEnd = (start + sweep * fill) % 360
   const indicatorColor = zoneColor(w, value, zones, fgFallback(w))
 
-  // Map a display-space value to an arc angle.
+  // Map a display-space value to an arc angle. Degenerate range
+  // (min === max) maps everything to the start angle to avoid NaN.
   const angleFor = (displayValue: number): number => {
-    const t = (displayValue - w.min) / (w.max - w.min)
+    const span = w.max - w.min
+    const t = span === 0 ? 0 : (displayValue - w.min) / span
     const c = Math.max(0, Math.min(1, t))
     return (start + sweep * c) % 360
   }
@@ -529,7 +531,12 @@ function formatCell(template: string | undefined, raw: unknown): string {
   // printf-style.
   return template.replace(/%(?:\.(\d+))?([sdf])/g, (_, prec, kind) => {
     if (kind === 's') return String(raw)
-    if (kind === 'd') return String(Math.trunc(Number(raw)))
+    if (kind === 'd') {
+      const n = Number(raw)
+      // Match %f's graceful fallback for non-numeric input rather
+      // than emitting the literal string "NaN".
+      return isNaN(n) ? String(raw) : String(Math.trunc(n))
+    }
     if (kind === 'f') {
       const n = Number(raw)
       if (isNaN(n)) return String(raw)
