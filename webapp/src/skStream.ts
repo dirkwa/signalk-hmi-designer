@@ -91,14 +91,22 @@ export function useSkValues(paths: string[]): Map<string, SkValue> {
  *  objects. The list widget binds to the synthetic `"notifications"`
  *  path; firmware maintains the same registry from WS deltas, so the
  *  designer poll only has to be fast enough that the operator sees
- *  the canvas update before they finish a layout edit — 2 s is fine. */
-export function useNotifications(enabled: boolean): NotificationRow[] {
+ *  the canvas update before they finish a layout edit — 2 s is fine.
+ *
+ *  `includeCleared` widens the fetch to also emit rows in cleared
+ *  states (normal/nominal). Each list widget then filters its own
+ *  slice — but the fetch must run in the wider mode if any widget
+ *  on the canvas wants the cleared rows. */
+export function useNotifications(
+  enabled: boolean,
+  includeCleared: boolean = false
+): NotificationRow[] {
   const [rows, setRows] = useState<NotificationRow[]>([])
   useEffect(() => {
     if (!enabled) return undefined
     let cancelled = false
     async function tick(): Promise<void> {
-      const next = await fetchNotifications()
+      const next = await fetchNotifications({ includeCleared })
       if (!cancelled) setRows(next)
     }
     void tick()
@@ -107,6 +115,6 @@ export function useNotifications(enabled: boolean): NotificationRow[] {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [enabled])
+  }, [enabled, includeCleared])
   return rows
 }

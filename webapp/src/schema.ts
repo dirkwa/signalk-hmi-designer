@@ -132,6 +132,13 @@ export interface ListWidget extends WidgetCommon {
   /** Optional field that names a zone state (alert/warn/etc.) used
    *  to tint each row's background per the maritime palette. */
   row_color_field?: string
+  /** When bound to "notifications", include cleared entries
+   *  (state="normal"/"nominal"). Default false — a "pending" list
+   *  shouldn't show what's already cleared, and the firmware
+   *  notifications_registry drops cleared states for the same
+   *  reason. Set true to get a full audit-style view that mirrors
+   *  the raw SK notifications.* tree. */
+  include_cleared?: boolean
 }
 
 /** Momentary / hold-to-act button.

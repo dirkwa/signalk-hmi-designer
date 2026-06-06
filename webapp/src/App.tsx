@@ -331,6 +331,10 @@ export function App(): JSX.Element {
   // from a separate REST-poll source. Only enable the poll if at
   // least one list widget needs it (avoids hammering the server
   // when the layout doesn't use notifications at all).
+  //
+  // If ANY list widget asks for include_cleared, the fetch widens
+  // to include cleared rows; widgets that don't want them filter
+  // locally in ListPreview. One fetch, two views.
   const wantsNotifications = useMemo(
     () =>
       screens.some((s) =>
@@ -340,7 +344,19 @@ export function App(): JSX.Element {
       ),
     [screens]
   )
-  const notifications = useNotifications(wantsNotifications)
+  const wantsCleared = useMemo(
+    () =>
+      screens.some((s) =>
+        s.widgets.some(
+          (w) =>
+            w.type === 'list' &&
+            w.bind === 'notifications' &&
+            w.include_cleared === true
+        )
+      ),
+    [screens]
+  )
+  const notifications = useNotifications(wantsNotifications, wantsCleared)
   const selected = screen.widgets.find((w) => w.id === selectedId) ?? null
 
   const filteredPaths = useMemo(() => {
@@ -1246,6 +1262,20 @@ export function App(): JSX.Element {
                       }
                     />
                   </label>
+                  {selected.bind === 'notifications' && (
+                    <label className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={selected.include_cleared === true}
+                        onChange={(e) =>
+                          updateWidget(selected.id, {
+                            include_cleared: e.target.checked || undefined
+                          })
+                        }
+                      />
+                      include cleared (normal / nominal)
+                    </label>
+                  )}
                   <fieldset className="bands">
                     <legend>columns</legend>
                     {selected.columns.map((c, i) => (

@@ -259,7 +259,18 @@ export interface NotificationRow {
  *  the designer must do the same to render a faithful canvas
  *  preview. Returns an empty array if the tree is missing or empty.
  */
-export async function fetchNotifications(): Promise<NotificationRow[]> {
+export interface FetchNotificationsOpts {
+  /** Include cleared entries (state="normal"/"nominal"). Default
+   *  false. The firmware notifications_registry drops cleared
+   *  states; matching that here keeps the canvas preview honest
+   *  for the common "pending alarms" list. Set true for an
+   *  audit-style view that mirrors the raw SK tree. */
+  includeCleared?: boolean
+}
+
+export async function fetchNotifications(
+  opts: FetchNotificationsOpts = {}
+): Promise<NotificationRow[]> {
   let r: Response
   try {
     r = await fetch('/signalk/v1/api/vessels/self/notifications')
@@ -269,6 +280,7 @@ export async function fetchNotifications(): Promise<NotificationRow[]> {
   if (!r.ok) return []
   const tree = (await r.json()) as unknown
   const out: NotificationRow[] = []
+  const includeCleared = opts.includeCleared ?? false
 
   function walk(node: unknown, pathParts: string[]): void {
     if (!node || typeof node !== 'object') return
@@ -281,9 +293,19 @@ export async function fetchNotifications(): Promise<NotificationRow[]> {
       typeof (rec.value as Record<string, unknown>).state === 'string'
     ) {
       const v = rec.value as Record<string, unknown>
+      // Normalize "warning" -> "warn"; some sources emit one, some
+      // the other, and the palette + firmware speak "warn".
+      const rawState = String(v.state ?? '')
+      const state = rawState === 'warning' ? 'warn' : rawState
+      if (
+        !includeCleared &&
+        (state === 'normal' || state === 'nominal')
+      ) {
+        return
+      }
       out.push({
         path: pathParts.join('.'),
-        state: String(v.state ?? ''),
+        state,
         message: String(v.message ?? ''),
         method: Array.isArray(v.method)
           ? (v.method as string[])

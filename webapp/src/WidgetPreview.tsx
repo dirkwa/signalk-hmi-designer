@@ -566,9 +566,20 @@ function ListPreview({
   if (w.bg_color) tileStyle.background = w.bg_color
   if (w.fg_color) tileStyle.color = w.fg_color
   const isNotifBind = w.bind === 'notifications'
-  const rows: Record<string, unknown>[] = isNotifBind
-    ? (notifications as unknown as Record<string, unknown>[])
+  // The shared notifications poll may fetch cleared rows because
+  // another widget asked for them. This widget filters its own
+  // slice per its own include_cleared flag (default: drop cleared).
+  const includeCleared = w.include_cleared === true
+  const filtered = isNotifBind
+    ? notifications.filter(
+        (r) =>
+          includeCleared || (r.state !== 'normal' && r.state !== 'nominal')
+      )
     : []
+  const rows: Record<string, unknown>[] = filtered as unknown as Record<
+    string,
+    unknown
+  >[]
   const max = w.max_rows ?? 8
   const sliced = rows.slice(0, max)
   return (
