@@ -234,6 +234,21 @@ export function App(): JSX.Element {
   const [shotOpacity, setShotOpacity] = useState<number>(0.5)
   const [shotErr, setShotErr] = useState<string | null>(null)
   const [shotBusy, setShotBusy] = useState<boolean>(false)
+  // When true, the canvas continuously polls /screenshot (JPEG) and
+  // shows the device's actual pixels under the editor chrome. The
+  // existing one-shot "Show device" button still works and is what
+  // the user reaches for when they want a frozen reference; "Live
+  // mirror" is the WYSIWYG mode (firmware widgets are the source of
+  // truth, designer overlays are just edit handles).
+  const [liveMirror, setLiveMirror] = useState<boolean>(false)
+  // Most-recent fetched screenshot when live-mirror is on. Stored
+  // separately from `shotUrl` so disabling live-mirror restores the
+  // previous one-shot snapshot (rather than ripping it from under
+  // the user mid-edit).
+  const liveShotRef = useRef<string | null>(null)
+  // Live-mirror status text rendered next to the toggle (round-trip
+  // ms, last error, etc.).
+  const [liveMirrorStatus, setLiveMirrorStatus] = useState<string>('')
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
@@ -259,6 +274,60 @@ export function App(): JSX.Element {
         /* nothing to restore — leave the empty default */
       })
   }, [])
+
+  // Live-mirror polling. When enabled, fetch /screenshot back-to-back
+  // (no fixed interval — the device's encode + transfer time is the
+  // natural rate-limit, currently ~700 ms for a JPEG frame). We loop
+  // instead of using setInterval so we never queue overlapping
+  // requests on a slow link. The previous blob URL is revoked when
+  // a new frame lands so we don't leak browser memory at 1 fps for
+  // hours.
+  useEffect(() => {
+    if (!liveMirror) {
+      // Tearing down: free the last live frame so the next enable
+      // starts clean. Leaves shotUrl alone if it was set from the
+      // one-shot Show device button.
+      if (liveShotRef.current) {
+        URL.revokeObjectURL(liveShotRef.current)
+        liveShotRef.current = null
+      }
+      setLiveMirrorStatus('')
+      return
+    }
+    let cancelled = false
+    const loop = async () => {
+      while (!cancelled) {
+        const t0 = performance.now()
+        try {
+          const blob = await fetchScreenshot(deviceUrl)
+          const url = URL.createObjectURL(blob)
+          // Atomic swap: revoke the OLD live URL only after the new
+          // one is in state so the <img> never holds a freed URL.
+          const prev = liveShotRef.current
+          liveShotRef.current = url
+          if (!cancelled) {
+            setShotUrl(url)
+            const ms = Math.round(performance.now() - t0)
+            setLiveMirrorStatus(`${(blob.size / 1024).toFixed(0)} KB · ${ms} ms`)
+          }
+          if (prev) URL.revokeObjectURL(prev)
+        } catch (e) {
+          if (!cancelled) {
+            setLiveMirrorStatus(
+              `err: ${e instanceof Error ? e.message : String(e)}`
+            )
+            // Back off briefly on errors so we don't hammer a down
+            // device. 1 s is short enough that recovery feels instant.
+            await new Promise((r) => setTimeout(r, 1000))
+          }
+        }
+      }
+    }
+    void loop()
+    return () => {
+      cancelled = true
+    }
+  }, [liveMirror, deviceUrl])
 
   const layoutDoc: Layout = useMemo(
     () => ({
@@ -814,11 +883,50 @@ export function App(): JSX.Element {
             onClick={() =>
               shotUrl ? onHideScreenshot() : void onTakeScreenshot()
             }
-            disabled={shotBusy}
-            title="Fetch the device's current screen and overlay it on the canvas"
+            disabled={shotBusy || liveMirror}
+            title={
+              liveMirror
+                ? 'Disabled while Live mirror is on'
+                : "Fetch the device's current screen and overlay it on the canvas"
+            }
           >
-            {shotBusy ? '…' : shotUrl ? 'Hide device' : 'Show device'}
+            {shotBusy ? '…' : shotUrl && !liveMirror ? 'Hide device' : 'Show device'}
           </button>
+          <button
+            onClick={() => {
+              const next = !liveMirror
+              setLiveMirror(next)
+              if (next) {
+                setShotErr(null)
+                // Live mirror is WYSIWYG: the canvas shows actual
+                // device pixels, so the user almost never wants the
+                // overlay dimmed. Snap to fully opaque on enable; the
+                // opacity slider is still there for fine tuning
+                // (e.g. comparing against the SVG previews).
+                setShotOpacity(1)
+              } else {
+                // Tearing down live mirror leaves no shotUrl unless
+                // there was a one-shot snapshot before — clear it so
+                // the canvas reverts to SVG previews. Also restore
+                // the default semi-transparent overlay for the next
+                // one-shot Show device.
+                if (shotUrl) {
+                  URL.revokeObjectURL(shotUrl)
+                  setShotUrl(null)
+                }
+                setShotOpacity(0.5)
+              }
+            }}
+            className={liveMirror ? 'primary' : ''}
+            title="Continuously poll the device for a fresh JPEG screenshot so the canvas shows real device pixels in near-real-time"
+          >
+            {liveMirror ? 'Stop mirror' : 'Live mirror'}
+          </button>
+          {liveMirror && liveMirrorStatus && (
+            <span className="muted" style={{ fontSize: 11 }}>
+              {liveMirrorStatus}
+            </span>
+          )}
           {shotUrl && (
             <label
               className="topbar-toggle"
@@ -1657,6 +1765,14 @@ export function App(): JSX.Element {
                         </button>
                       </div>
                     )}
+                    {/* Live-mirror is WYSIWYG: the JPEG overlay IS
+                        the widget surface, so the SVG approximations
+                        would just smear on top. The tile chrome
+                        (selection frame, drag handle, close button)
+                        still renders above, so editing works as
+                        normal — only the per-widget render is
+                        suppressed. */}
+                    {!liveMirror && (
                     <WidgetPreview
                       w={w}
                       value={
@@ -1678,6 +1794,7 @@ export function App(): JSX.Element {
                       zonesMap={pathZones}
                       notifications={notifications}
                     />
+                    )}
                   </div>
                 )
               })}
