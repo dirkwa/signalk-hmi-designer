@@ -12,7 +12,7 @@ export type WidgetKind =
   | 'bar'
   | 'bargroup'
   | 'button'
-  | 'list'
+  | 'notifications'
 
 export interface DisplayConfig {
   unit?: string
@@ -99,9 +99,10 @@ export interface BarGroupWidget extends WidgetCommon {
   bars: BarGroupBar[]
 }
 
-/** One column in a list widget. `field` is a dotted path inside the
- *  row object (e.g. `"position.lat"`). `format` is a tiny printf-style
- *  template applied when the field is rendered. */
+/** One column in a notifications-list widget. `field` is a dotted
+ *  path inside the row object (e.g. `"path"`, `"state"`, `"message"`,
+ *  `"createdAt"`). `format` is a tiny printf-style template applied
+ *  when the field is rendered. */
 export interface ListColumn {
   label: string
   field: string
@@ -111,33 +112,28 @@ export interface ListColumn {
   format?: string
 }
 
-/** Tabular list bound to a SK array path.
+/** Tabular notifications viewer.
  *
- *  In v1 the only fully-supported bind is the synthetic
- *  `"notifications"` path: the firmware exposes its
- *  notifications-registry snapshot as an array of
- *  `{path, state, message}` objects, and the designer fetches
- *  `/signalk/v1/api/vessels/self/notifications` and flattens it to
- *  the same shape for the canvas preview.
+ *  Renders rows from the device's notifications registry (a flat
+ *  array of `{path, state, message, createdAt?, ...}` derived from
+ *  every `notifications.*` SK path the device has seen). The
+ *  designer mirrors that array client-side by polling SK.
  *
- *  Other plain-array SK paths can also bind here; v2 will add a
- *  `mode: "vessels"` for an AIS-style iterator over `vessels.*`. */
-export interface ListWidget extends WidgetCommon {
-  type: 'list'
-  /** Plain SK array path, or the literal `"notifications"`. */
-  bind: string
+ *  Today's only data source is `notifications`. A future generic
+ *  table widget (bind: arbitrary array path, vessels.* iterator,
+ *  etc.) would land as a separate kind. */
+export interface NotificationsWidget extends WidgetCommon {
+  type: 'notifications'
   max_rows?: number
   row_height?: number
   columns: ListColumn[]
   /** Optional field that names a zone state (alert/warn/etc.) used
    *  to tint each row's background per the maritime palette. */
   row_color_field?: string
-  /** When bound to "notifications", include cleared entries
-   *  (state="normal"/"nominal"). Default false — a "pending" list
-   *  shouldn't show what's already cleared, and the firmware
-   *  notifications_registry drops cleared states for the same
-   *  reason. Set true to get a full audit-style view that mirrors
-   *  the raw SK notifications.* tree. */
+  /** Include cleared entries (state="normal"/"nominal"). Default
+   *  false — a "pending" list shouldn't show what's already
+   *  cleared. Set true for an audit-style snapshot of every known
+   *  notification path. */
   include_cleared?: boolean
 }
 
@@ -167,7 +163,7 @@ export type Widget =
   | BarWidget
   | BarGroupWidget
   | ButtonWidget
-  | ListWidget
+  | NotificationsWidget
 
 export interface Screen {
   id: string

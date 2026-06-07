@@ -115,13 +115,12 @@ function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>
         bind: '',
         press_value: 1
       }
-    case 'list':
+    case 'notifications':
       return {
         ...base,
-        type: 'list',
+        type: 'notifications',
         w: 480,
         h: 320,
-        bind: 'notifications',
         max_rows: 8,
         columns: [
           { label: 'PATH', field: 'path', width: 220 },
@@ -338,9 +337,7 @@ export function App(): JSX.Element {
   const wantsNotifications = useMemo(
     () =>
       screens.some((s) =>
-        s.widgets.some(
-          (w) => w.type === 'list' && w.bind === 'notifications'
-        )
+        s.widgets.some((w) => w.type === 'notifications')
       ),
     [screens]
   )
@@ -349,9 +346,7 @@ export function App(): JSX.Element {
       screens.some((s) =>
         s.widgets.some(
           (w) =>
-            w.type === 'list' &&
-            w.bind === 'notifications' &&
-            w.include_cleared === true
+            w.type === 'notifications' && w.include_cleared === true
         )
       ),
     [screens]
@@ -610,9 +605,14 @@ export function App(): JSX.Element {
    *
    *  - button widgets with `action: {put: {value, path?}}` are
    *    rewritten to `{bind: path ?? bind, press_value: value}`.
+   *  - `list` widgets whose only data source was `bind: "notifications"`
+   *    are renamed to `notifications` (the dedicated kind). The
+   *    `bind` field is dropped (notifications is always the source).
+   *    Any `list` with a different bind is left as-is so a future
+   *    generic-table widget can reclaim that kind without a
+   *    silent rewrite.
    *
-   *  Non-button widgets pass through. New widgets authored in v0.2+
-   *  never use the old shape.
+   *  Non-button, non-list widgets pass through.
    */
   const migrateLayout = (l: Layout): Layout => {
     return {
@@ -620,9 +620,18 @@ export function App(): JSX.Element {
       screens: l.screens.map((s) => ({
         ...s,
         widgets: s.widgets.map((w) => {
-          if (w.type !== 'button') return w
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const legacy = w as any
+          if (
+            legacy.type === 'list' &&
+            (legacy.bind === 'notifications' || legacy.bind === undefined)
+          ) {
+            const { type: _t, bind: _b, ...rest } = legacy
+            void _t
+            void _b
+            return { ...rest, type: 'notifications' } as Widget
+          }
+          if (w.type !== 'button') return w
           if (legacy.action?.put && legacy.press_value === undefined) {
             const { action: _drop, ...rest } = legacy
             void _drop
@@ -764,7 +773,15 @@ export function App(): JSX.Element {
 
   const availableKinds = useMemo<WidgetKind[]>(() => {
     if (!hello)
-      return ['label', 'toggle', 'arc', 'bar', 'bargroup', 'button', 'list']
+      return [
+        'label',
+        'toggle',
+        'arc',
+        'bar',
+        'bargroup',
+        'button',
+        'notifications'
+      ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
         k === 'label' ||
@@ -773,7 +790,7 @@ export function App(): JSX.Element {
         k === 'bar' ||
         k === 'bargroup' ||
         k === 'button' ||
-        k === 'list'
+        k === 'notifications'
     )
   }, [hello])
 
@@ -1222,7 +1239,7 @@ export function App(): JSX.Element {
                   </fieldset>
                 </>
               )}
-              {selected.type === 'list' && (
+              {selected.type === 'notifications' && (
                 <>
                   <label>
                     max rows
@@ -1262,20 +1279,18 @@ export function App(): JSX.Element {
                       }
                     />
                   </label>
-                  {selected.bind === 'notifications' && (
-                    <label className="checkbox">
-                      <input
-                        type="checkbox"
-                        checked={selected.include_cleared === true}
-                        onChange={(e) =>
-                          updateWidget(selected.id, {
-                            include_cleared: e.target.checked || undefined
-                          })
-                        }
-                      />
-                      include cleared (normal / nominal)
-                    </label>
-                  )}
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selected.include_cleared === true}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          include_cleared: e.target.checked || undefined
+                        })
+                      }
+                    />
+                    include cleared (normal / nominal)
+                  </label>
                   <fieldset className="bands">
                     <legend>columns</legend>
                     {selected.columns.map((c, i) => (

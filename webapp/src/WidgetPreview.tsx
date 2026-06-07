@@ -107,8 +107,10 @@ export function WidgetPreview({
       )
     case 'button':
       return <ButtonPreview w={w} />
-    case 'list':
-      return <ListPreview w={w} notifications={notifications ?? []} />
+    case 'notifications':
+      return (
+        <NotificationsPreview w={w} notifications={notifications ?? []} />
+      )
   }
 }
 
@@ -555,37 +557,31 @@ const VALID_STATES: ReadonlySet<string> = new Set([
   'emergency'
 ])
 
-function ListPreview({
+function NotificationsPreview({
   w,
   notifications
 }: {
-  w: Extract<Widget, { type: 'list' }>
+  w: Extract<Widget, { type: 'notifications' }>
   notifications: NotificationRow[]
 }) {
   const tileStyle: CSSProperties = {}
   if (w.bg_color) tileStyle.background = w.bg_color
   if (w.fg_color) tileStyle.color = w.fg_color
-  const isNotifBind = w.bind === 'notifications'
   // The shared notifications poll may fetch cleared rows because
   // another widget asked for them. This widget filters its own
   // slice per its own include_cleared flag (default: drop cleared).
   const includeCleared = w.include_cleared === true
-  const filtered = isNotifBind
-    ? notifications.filter(
-        (r) =>
-          includeCleared || (r.state !== 'normal' && r.state !== 'nominal')
-      )
-    : []
+  const filtered = notifications.filter(
+    (r) =>
+      includeCleared || (r.state !== 'normal' && r.state !== 'nominal')
+  )
   // Sort by severity descending so emergency/alarm float to the top,
   // matching the firmware's snapshot() order. Cleared rows go last
   // when include_cleared widens the set. Unknown states (no state
   // field or non-canonical) sort to the very bottom.
-  const sorted = isNotifBind
-    ? [...filtered].sort(
-        (a, b) =>
-          severityRank(b.state ?? '') - severityRank(a.state ?? '')
-      )
-    : filtered
+  const sorted = [...filtered].sort(
+    (a, b) => severityRank(b.state ?? '') - severityRank(a.state ?? '')
+  )
   const rows: Record<string, unknown>[] = sorted as unknown as Record<
     string,
     unknown
@@ -626,9 +622,7 @@ function ListPreview({
                   colSpan={w.columns.length}
                   className="wp-list-empty"
                 >
-                  {isNotifBind
-                    ? '(no pending notifications)'
-                    : '(empty)'}
+                  (no pending notifications)
                 </td>
               </tr>
             )}
