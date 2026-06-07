@@ -245,44 +245,15 @@ export function App(): JSX.Element {
 
   // Restore previously-saved layout on first mount. Hydrates all
   // screens (multi-screen support); zones are pre-fetched for every
-  // bound path across every screen.
+  // bound path across every screen. Loaded layouts go through the
+  // same adoptLayout path used by Load / Import so the migration
+  // hook runs once and only once — keeps the saved-then-pushed flow
+  // consistent (no risk of pushing a pre-migration shape to a
+  // post-migration firmware).
   useEffect(() => {
     void loadSavedLayout()
       .then((saved) => {
-        if (!saved) return
-        if (saved.screens.length > 0) {
-          setScreens(saved.screens)
-          setActiveIdx(0)
-          for (const scr of saved.screens) {
-            for (const w of scr.widgets) {
-              for (const p of bindsOf(w)) {
-                void fetchPathMeta(p).then((meta) => {
-                  if (!meta) return
-                  if (meta.zones && meta.zones.length > 0) {
-                    setPathZones((prev) => {
-                      const next = new Map(prev)
-                      next.set(p, meta.zones!)
-                      return next
-                    })
-                  }
-                  if (meta.description) {
-                    setPathDescriptions((prev) => {
-                      const next = new Map(prev)
-                      next.set(p, meta.description!)
-                      return next
-                    })
-                  }
-                })
-              }
-            }
-          }
-        }
-        if (saved.status_overlay !== undefined) {
-          setStatusOverlay(saved.status_overlay)
-        }
-        if (saved.notifications !== undefined) {
-          setNotifConfig(saved.notifications)
-        }
+        if (saved) adoptLayoutRef.current?.(saved)
       })
       .catch(() => {
         /* nothing to restore — leave the empty default */
@@ -444,6 +415,10 @@ export function App(): JSX.Element {
   /* ---- copy/paste clipboard (in-memory, session-scoped) ---- */
   const clipboardRef = useRef<Widget | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // Forward-ref so the boot-restore effect (declared above
+  // adoptLayout for ordering reasons) can route through the same
+  // migration + state-hydration path as Load / Import.
+  const adoptLayoutRef = useRef<((l: Layout) => void) | null>(null)
 
   const copySelected = (): void => {
     const w = screen.widgets.find((x) => x.id === selectedId)
@@ -683,6 +658,10 @@ export function App(): JSX.Element {
       }
     }
   }
+  // Expose adoptLayout to the boot-restore effect via the ref. The
+  // effect can't call adoptLayout directly because it's declared
+  // above this point; the ref bridges the ordering.
+  adoptLayoutRef.current = adoptLayout
 
   const onSave = async (): Promise<void> => {
     setFileMsg(null)
