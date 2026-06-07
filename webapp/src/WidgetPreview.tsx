@@ -576,63 +576,106 @@ function ListPreview({
           includeCleared || (r.state !== 'normal' && r.state !== 'nominal')
       )
     : []
-  const rows: Record<string, unknown>[] = filtered as unknown as Record<
+  // Sort by severity descending so emergency/alarm float to the top,
+  // matching the firmware's snapshot() order. Cleared rows go last
+  // when include_cleared widens the set. Unknown states (no state
+  // field or non-canonical) sort to the very bottom.
+  const sorted = isNotifBind
+    ? [...filtered].sort(
+        (a, b) =>
+          severityRank(b.state ?? '') - severityRank(a.state ?? '')
+      )
+    : filtered
+  const rows: Record<string, unknown>[] = sorted as unknown as Record<
     string,
     unknown
   >[]
   const max = w.max_rows ?? 8
   const sliced = rows.slice(0, max)
+  const rowH = w.row_height ?? 28
   return (
     <div className="wp wp-tile wp-list" style={tileStyle}>
       {w.label && <div className="wp-caption wp-list-caption">{w.label}</div>}
-      <table className="wp-list-table">
-        <thead>
-          <tr>
+      <div className="wp-list-head">
+        <table className="wp-list-table">
+          <colgroup>
             {w.columns.map((c, i) => (
-              <th
-                key={i}
-                style={c.width ? { width: `${c.width}px` } : undefined}
-              >
-                {c.label}
-              </th>
+              <col key={i} style={c.width ? { width: `${c.width}px` } : undefined} />
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sliced.length === 0 && (
+          </colgroup>
+          <thead>
             <tr>
-              <td
-                colSpan={w.columns.length}
-                className="wp-list-empty"
-              >
-                {isNotifBind
-                  ? '(no pending notifications)'
-                  : '(empty)'}
-              </td>
+              {w.columns.map((c, i) => (
+                <th key={i}>{c.label}</th>
+              ))}
             </tr>
-          )}
-          {sliced.map((row, ri) => {
-            const stateRaw = w.row_color_field
-              ? readField(row, w.row_color_field)
-              : undefined
-            const state =
-              typeof stateRaw === 'string' &&
-              VALID_STATES.has(stateRaw.toLowerCase())
-                ? (stateRaw.toLowerCase() as ZoneState)
-                : null
-            const rowStyle: CSSProperties = state
-              ? { background: colorForZoneState(state), color: '#0d1117' }
-              : {}
-            return (
-              <tr key={ri} style={rowStyle}>
-                {w.columns.map((c, ci) => (
-                  <td key={ci}>{formatCell(c.format, readField(row, c.field))}</td>
-                ))}
+          </thead>
+        </table>
+      </div>
+      <div className="wp-list-body">
+        <table className="wp-list-table">
+          <colgroup>
+            {w.columns.map((c, i) => (
+              <col key={i} style={c.width ? { width: `${c.width}px` } : undefined} />
+            ))}
+          </colgroup>
+          <tbody>
+            {sliced.length === 0 && (
+              <tr>
+                <td
+                  colSpan={w.columns.length}
+                  className="wp-list-empty"
+                >
+                  {isNotifBind
+                    ? '(no pending notifications)'
+                    : '(empty)'}
+                </td>
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            )}
+            {sliced.map((row, ri) => {
+              const stateRaw = w.row_color_field
+                ? readField(row, w.row_color_field)
+                : undefined
+              const state =
+                typeof stateRaw === 'string' &&
+                VALID_STATES.has(stateRaw.toLowerCase())
+                  ? (stateRaw.toLowerCase() as ZoneState)
+                  : null
+              // Tinted rows take dark text for legibility against the
+              // bright palette; untinted rows inherit from the tile.
+              const rowStyle: CSSProperties = state
+                ? {
+                    background: colorForZoneState(state),
+                    color: '#0d1117',
+                    height: `${rowH}px`
+                  }
+                : { height: `${rowH}px` }
+              return (
+                <tr key={ri} style={rowStyle}>
+                  {w.columns.map((c, ci) => (
+                    <td key={ci}>{formatCell(c.format, readField(row, c.field))}</td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
+}
+
+/** Numeric ordering for notification states; higher = more severe.
+ *  Used to sort list rows so emergency floats to the top. */
+function severityRank(state: string): number {
+  switch (state.toLowerCase()) {
+    case 'emergency': return 5
+    case 'alarm':     return 4
+    case 'warn':
+    case 'warning':   return 3
+    case 'alert':     return 2
+    case 'normal':    return 1
+    case 'nominal':   return 0
+    default:          return -1
+  }
 }

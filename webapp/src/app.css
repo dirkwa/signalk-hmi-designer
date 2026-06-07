@@ -591,26 +591,39 @@ button.x { padding: 0 6px; font-size: 14px; }
   flex: 0 0 auto;
   margin-bottom: 4px;
 }
-.wp-list-table {
+.wp-list-head {
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.wp-list-body {
   flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.wp-list-table {
   border-collapse: collapse;
   width: 100%;
+  table-layout: fixed;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
-.wp-list-table thead th {
+.wp-list-head .wp-list-table thead th {
   text-align: left;
   font-weight: 500;
   color: var(--muted);
   border-bottom: 1px solid #30363d;
   padding: 4px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.wp-list-table td {
-  padding: 3px 6px;
+.wp-list-body .wp-list-table td {
+  padding: 0 6px;
   border-bottom: 1px solid rgba(48, 54, 61, 0.4);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  vertical-align: middle;
 }
 .wp-list-empty {
   text-align: center;
