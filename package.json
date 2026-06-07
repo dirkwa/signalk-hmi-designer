@@ -47,10 +47,11 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx}\"",
     "typecheck:webapp": "tsc -p tsconfig.webapp.json",
     "build:plugin": "tsc",
-    "build:webapp": "vite build",
+    "copy:wasm": "bash scripts/copy-wasm.sh",
+    "build:webapp": "npm run copy:wasm && vite build",
     "build": "npm run build:plugin && npm run typecheck:webapp && npm run build:webapp",
     "build:all": "npm run lint && npm run build && npm run test",
-    "dev": "vite",
+    "dev": "npm run copy:wasm && vite",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },

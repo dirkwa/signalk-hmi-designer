@@ -4,6 +4,7 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
 import { WidgetPreview } from './WidgetPreview'
+import { WasmCanvas } from './WasmCanvas'
 import { useNotifications, useSkValues } from './skStream'
 import { DEFAULT_TAB_STRIP_HEIGHT, STATUS_OVERLAY_HEIGHT } from './schema'
 
@@ -234,21 +235,21 @@ export function App(): JSX.Element {
   const [shotOpacity, setShotOpacity] = useState<number>(0.5)
   const [shotErr, setShotErr] = useState<string | null>(null)
   const [shotBusy, setShotBusy] = useState<boolean>(false)
-  // When true, the canvas continuously polls /screenshot (JPEG) and
-  // shows the device's actual pixels under the editor chrome. The
-  // existing one-shot "Show device" button still works and is what
-  // the user reaches for when they want a frozen reference; "Live
-  // mirror" is the WYSIWYG mode (firmware widgets are the source of
-  // truth, designer overlays are just edit handles).
-  const [liveMirror, setLiveMirror] = useState<boolean>(false)
-  // Most-recent fetched screenshot when live-mirror is on. Stored
-  // separately from `shotUrl` so disabling live-mirror restores the
-  // previous one-shot snapshot (rather than ripping it from under
-  // the user mid-edit).
+  // Preview backend behind the canvas. Three modes:
+  //   'svg'    — per-widget SVG approximations (default; pure JS).
+  //   'mirror' — poll the device's /screenshot?fmt=jpeg ~1 Hz; shows
+  //              real device pixels (needs a reachable device).
+  //   'wasm'   — LVGL+widget_factory compiled to WebAssembly renders
+  //              the layout into a 1024x600 <canvas> locally. Bit-
+  //              identical to the device, no device needed, but the
+  //              bundle is ~1.3 MB (lazy-loaded).
+  // Each mode has its own status line so the toolbar can show
+  // round-trip ms, last error, "loading wasm…", etc.
+  const [previewMode, setPreviewMode] = useState<'svg' | 'mirror' | 'wasm'>('svg')
+  const liveMirror = previewMode === 'mirror'
   const liveShotRef = useRef<string | null>(null)
-  // Live-mirror status text rendered next to the toggle (round-trip
-  // ms, last error, etc.).
   const [liveMirrorStatus, setLiveMirrorStatus] = useState<string>('')
+  const [wasmStatus, setWasmStatus] = useState<string>('')
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
@@ -883,48 +884,74 @@ export function App(): JSX.Element {
             onClick={() =>
               shotUrl ? onHideScreenshot() : void onTakeScreenshot()
             }
-            disabled={shotBusy || liveMirror}
+            disabled={shotBusy || previewMode !== 'svg'}
             title={
-              liveMirror
-                ? 'Disabled while Live mirror is on'
+              previewMode !== 'svg'
+                ? 'Disabled while a live preview mode is on'
                 : "Fetch the device's current screen and overlay it on the canvas"
             }
           >
-            {shotBusy ? '…' : shotUrl && !liveMirror ? 'Hide device' : 'Show device'}
+            {shotBusy
+              ? '…'
+              : shotUrl && previewMode === 'svg'
+                ? 'Hide device'
+                : 'Show device'}
           </button>
-          <button
-            onClick={() => {
-              const next = !liveMirror
-              setLiveMirror(next)
-              if (next) {
-                setShotErr(null)
-                // Live mirror is WYSIWYG: the canvas shows actual
-                // device pixels, so the user almost never wants the
-                // overlay dimmed. Snap to fully opaque on enable; the
-                // opacity slider is still there for fine tuning
-                // (e.g. comparing against the SVG previews).
-                setShotOpacity(1)
-              } else {
-                // Tearing down live mirror leaves no shotUrl unless
-                // there was a one-shot snapshot before — clear it so
-                // the canvas reverts to SVG previews. Also restore
-                // the default semi-transparent overlay for the next
-                // one-shot Show device.
+          {/* 3-way preview backend. SVG (default approximation),
+              Mirror (live JPEG poll), WASM (LVGL in browser). */}
+          <div
+            className="topbar-toggle"
+            role="group"
+            title="Canvas preview backend"
+            style={{ gap: 4 }}
+          >
+            <button
+              onClick={() => {
+                setPreviewMode('svg')
                 if (shotUrl) {
                   URL.revokeObjectURL(shotUrl)
                   setShotUrl(null)
                 }
                 setShotOpacity(0.5)
-              }
-            }}
-            className={liveMirror ? 'primary' : ''}
-            title="Continuously poll the device for a fresh JPEG screenshot so the canvas shows real device pixels in near-real-time"
-          >
-            {liveMirror ? 'Stop mirror' : 'Live mirror'}
-          </button>
-          {liveMirror && liveMirrorStatus && (
+              }}
+              className={previewMode === 'svg' ? 'primary' : ''}
+              title="Per-widget SVG approximations (offline; ~close to the device but not pixel-perfect)"
+            >
+              SVG
+            </button>
+            <button
+              onClick={() => {
+                setPreviewMode('mirror')
+                setShotErr(null)
+                setShotOpacity(1)
+              }}
+              className={previewMode === 'mirror' ? 'primary' : ''}
+              title="Continuously poll the device for /screenshot.jpeg so the canvas shows real device pixels (needs a reachable device)"
+            >
+              Mirror
+            </button>
+            <button
+              onClick={() => {
+                setPreviewMode('wasm')
+                if (shotUrl) {
+                  URL.revokeObjectURL(shotUrl)
+                  setShotUrl(null)
+                }
+              }}
+              className={previewMode === 'wasm' ? 'primary' : ''}
+              title="LVGL + widget_factory compiled to WebAssembly. Pixel-perfect, works offline; ~1.3 MB bundle (lazy-loaded)."
+            >
+              WASM
+            </button>
+          </div>
+          {previewMode === 'mirror' && liveMirrorStatus && (
             <span className="muted" style={{ fontSize: 11 }}>
               {liveMirrorStatus}
+            </span>
+          )}
+          {previewMode === 'wasm' && wasmStatus && (
+            <span className="muted" style={{ fontSize: 11 }}>
+              {wasmStatus}
             </span>
           )}
           {shotUrl && (
@@ -1691,6 +1718,21 @@ export function App(): JSX.Element {
                 }}
               />
             )}
+            {/* WASM preview: full-canvas LVGL render, sits beneath
+                widget tile chrome so the user can still drag and
+                resize over it. Note SDL captures pointer events on
+                the canvas itself; we pointer-events: none in
+                WasmCanvas so RGL drag handles still receive
+                clicks. */}
+            {previewMode === 'wasm' && (
+              <WasmCanvas
+                layout={layoutDoc}
+                activeIdx={activeIdx}
+                displayW={displayW}
+                displayH={displayH}
+                onStatus={setWasmStatus}
+              />
+            )}
             <div
               className="canvas-content"
               style={{
@@ -1765,14 +1807,14 @@ export function App(): JSX.Element {
                         </button>
                       </div>
                     )}
-                    {/* Live-mirror is WYSIWYG: the JPEG overlay IS
-                        the widget surface, so the SVG approximations
-                        would just smear on top. The tile chrome
+                    {/* Live-mirror AND wasm mode both render the
+                        widget surface elsewhere (JPEG image / wasm
+                        canvas). The SVG approximations would smear
+                        on top, so suppress them. Tile chrome
                         (selection frame, drag handle, close button)
                         still renders above, so editing works as
-                        normal — only the per-widget render is
-                        suppressed. */}
-                    {!liveMirror && (
+                        normal. */}
+                    {previewMode === 'svg' && (
                     <WidgetPreview
                       w={w}
                       value={
