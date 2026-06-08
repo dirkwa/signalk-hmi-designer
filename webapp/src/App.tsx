@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
@@ -160,6 +160,51 @@ function applyGrid(w: Widget, g: GLLayout, colPxW: number): Widget {
     w: Math.round(g.w * colPxW),
     h: Math.round(g.h * ROW_PX_H)
   }
+}
+
+/** Free-typing number input.
+ *
+ *  type="number" silently rejects partial input like "-" or "1."
+ *  in many browsers — the field clears, you can't type a negative
+ *  without a spinner click, etc. Wrapping the value as text and
+ *  parsing-on-commit lets the user type freely (negatives, decimals,
+ *  scientific notation), only writing back to state when the input
+ *  parses cleanly. */
+function NumberField(props: {
+  value: number
+  onChange: (v: number) => void
+  title?: string
+  className?: string
+  style?: React.CSSProperties
+  min?: number
+}): JSX.Element {
+  const [draft, setDraft] = useState<string>(String(props.value))
+  // Sync from canonical value when it changes externally (e.g. paste,
+  // load layout), but NOT while the user is actively typing — checked
+  // by comparing the parsed draft to the canonical value.
+  useEffect(() => {
+    const n = Number(draft)
+    if (Number.isFinite(n) && n === props.value) return
+    setDraft(String(props.value))
+  }, [props.value])  // eslint-disable-line
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={props.className}
+      style={props.style}
+      title={props.title}
+      value={draft}
+      onChange={(e) => {
+        const txt = e.target.value
+        setDraft(txt)
+        const n = Number(txt)
+        if (txt === '' || !Number.isFinite(n)) return
+        if (props.min !== undefined && n < props.min) return
+        props.onChange(n)
+      }}
+    />
+  )
 }
 
 /* ---------- the app ---------- */
@@ -1281,23 +1326,21 @@ export function App(): JSX.Element {
                             updateWidget(selected.id, { bars: next })
                           }}
                         />
-                        <input
-                          type="number"
+                        <NumberField
                           value={b.min}
-                          title="min"
-                          onChange={(e) => {
+                          title="min (negatives + decimals allowed)"
+                          onChange={(n) => {
                             const next = [...selected.bars]
-                            next[i] = { ...b, min: Number(e.target.value) }
+                            next[i] = { ...b, min: n }
                             updateWidget(selected.id, { bars: next })
                           }}
                         />
-                        <input
-                          type="number"
+                        <NumberField
                           value={b.max}
-                          title="max"
-                          onChange={(e) => {
+                          title="max (negatives + decimals allowed)"
+                          onChange={(n) => {
                             const next = [...selected.bars]
-                            next[i] = { ...b, max: Number(e.target.value) }
+                            next[i] = { ...b, max: n }
                             updateWidget(selected.id, { bars: next })
                           }}
                         />
@@ -1321,12 +1364,23 @@ export function App(): JSX.Element {
                     <button
                       type="button"
                       className="ghost"
-                      onClick={() => {
+                      onClick={(e) => {
                         const next = [
                           ...selected.bars,
                           { label: '', bind: '', min: 0, max: 100 }
                         ]
                         updateWidget(selected.id, { bars: next })
+                        // Bring the freshly-added row into view —
+                        // without this the inspector's overflow-y
+                        // hides the new bar at the bottom and the
+                        // click feels like a no-op.
+                        requestAnimationFrame(() => {
+                          const btn = e.currentTarget as HTMLButtonElement | null
+                          btn?.scrollIntoView({
+                            block: 'nearest',
+                            behavior: 'smooth',
+                          })
+                        })
                       }}
                     >
                       + add bar
