@@ -60,6 +60,19 @@ const loadModule = async (canvas: HTMLCanvasElement): Promise<JlpWasmModule> => 
     }
     const mod = await imported.default({
       canvas,
+      // Restrict SDL2's keyboard + mouse capture to the canvas
+      // element. By default the emscripten SDL2 port installs key
+      // listeners on the document, which swallows every key on the
+      // page — typing in the inspector inputs stops working, F12 +
+      // Ctrl-Shift-R get intercepted, etc. Setting these targets
+      // BEFORE module init scopes capture to the canvas only.
+      // pointer-events: none on the canvas means the canvas itself
+      // never gets focus, so LVGL won't receive UI input from the
+      // page either — but that's fine, the designer drives LVGL via
+      // the jlp_apply_layout / jlp_set_value_* bridge, not via
+      // keyboard or mouse.
+      keyEventTarget: canvas,
+      mouseEventTarget: canvas,
       print: (s: string) => console.warn('[jlp-wasm]', s),
       printErr: (s: string) => console.error('[jlp-wasm]', s),
     })
