@@ -3,9 +3,8 @@ import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
-import { WidgetPreview } from './WidgetPreview'
 import { WasmCanvas } from './WasmCanvas'
-import { useNotifications, useSkValues } from './skStream'
+import { useSkValues } from './skStream'
 import { DEFAULT_TAB_STRIP_HEIGHT, STATUS_OVERLAY_HEIGHT } from './schema'
 
 import {
@@ -240,20 +239,19 @@ export function App(): JSX.Element {
     () => new Map()
   )
   const [shotUrl, setShotUrl] = useState<string | null>(null)
-  const [shotOpacity, setShotOpacity] = useState<number>(0.5)
+  const [shotOpacity, setShotOpacity] = useState<number>(1)
   const [shotErr, setShotErr] = useState<string | null>(null)
-  const [shotBusy, setShotBusy] = useState<boolean>(false)
-  // Preview backend behind the canvas. Three modes:
-  //   'svg'    — per-widget SVG approximations (default; pure JS).
-  //   'mirror' — poll the device's /screenshot?fmt=jpeg ~1 Hz; shows
-  //              real device pixels (needs a reachable device).
+  // Preview backend behind the canvas. Two modes:
   //   'wasm'   — LVGL+widget_factory compiled to WebAssembly renders
   //              the layout into a 1024x600 <canvas> locally. Bit-
-  //              identical to the device, no device needed, but the
-  //              bundle is ~1.3 MB (lazy-loaded).
-  // Each mode has its own status line so the toolbar can show
-  // round-trip ms, last error, "loading wasm…", etc.
-  const [previewMode, setPreviewMode] = useState<'svg' | 'mirror' | 'wasm'>('svg')
+  //              identical to the device, no device needed. Default.
+  //   'mirror' — poll the device's /screenshot?fmt=jpeg ~1 Hz; shows
+  //              real device pixels (needs a reachable device).
+  // The old SVG-approximation mode is gone — WASM gives pixel parity
+  // for free on localhost, and the visual drift between SVG and the
+  // actual device was the main reason for adding WASM in the first
+  // place.
+  const [previewMode, setPreviewMode] = useState<'mirror' | 'wasm'>('wasm')
   const liveMirror = previewMode === 'mirror'
   const liveShotRef = useRef<string | null>(null)
   const [liveMirrorStatus, setLiveMirrorStatus] = useState<string>('')
@@ -391,32 +389,6 @@ export function App(): JSX.Element {
   )
   const skValues = useSkValues(boundPaths)
 
-  // List widgets bound to the synthetic "notifications" path pull
-  // from a separate REST-poll source. Only enable the poll if at
-  // least one list widget needs it (avoids hammering the server
-  // when the layout doesn't use notifications at all).
-  //
-  // If ANY list widget asks for include_cleared, the fetch widens
-  // to include cleared rows; widgets that don't want them filter
-  // locally in ListPreview. One fetch, two views.
-  const wantsNotifications = useMemo(
-    () =>
-      screens.some((s) =>
-        s.widgets.some((w) => w.type === 'notifications')
-      ),
-    [screens]
-  )
-  const wantsCleared = useMemo(
-    () =>
-      screens.some((s) =>
-        s.widgets.some(
-          (w) =>
-            w.type === 'notifications' && w.include_cleared === true
-        )
-      ),
-    [screens]
-  )
-  const notifications = useNotifications(wantsNotifications, wantsCleared)
   const selected = screen.widgets.find((w) => w.id === selectedId) ?? null
 
   const filteredPaths = useMemo(() => {
@@ -662,27 +634,6 @@ export function App(): JSX.Element {
     }
   }
 
-  const onTakeScreenshot = async (): Promise<void> => {
-    setShotErr(null)
-    setShotBusy(true)
-    try {
-      const blob = await fetchScreenshot(deviceUrl)
-      // Replace the previous blob URL (free its memory).
-      if (shotUrl) URL.revokeObjectURL(shotUrl)
-      setShotUrl(URL.createObjectURL(blob))
-    } catch (e) {
-      setShotErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setShotBusy(false)
-    }
-  }
-
-  const onHideScreenshot = (): void => {
-    if (shotUrl) URL.revokeObjectURL(shotUrl)
-    setShotUrl(null)
-    setShotErr(null)
-  }
-
   /* ---- file ops: save / load / export / import / clear ---- */
 
   const [fileMsg, setFileMsg] = useState<string | null>(null)
@@ -921,25 +872,10 @@ export function App(): JSX.Element {
             />
             status bar
           </label>
-          <button
-            onClick={() =>
-              shotUrl ? onHideScreenshot() : void onTakeScreenshot()
-            }
-            disabled={shotBusy || previewMode !== 'svg'}
-            title={
-              previewMode !== 'svg'
-                ? 'Disabled while a live preview mode is on'
-                : "Fetch the device's current screen and overlay it on the canvas"
-            }
-          >
-            {shotBusy
-              ? '…'
-              : shotUrl && previewMode === 'svg'
-                ? 'Hide device'
-                : 'Show device'}
-          </button>
-          {/* 3-way preview backend. SVG (default approximation),
-              Mirror (live JPEG poll), WASM (LVGL in browser). */}
+          {/* Preview backend. WASM (default) renders the layout via
+              the firmware's widget_factory compiled to wasm. Mirror
+              polls the device's /screenshot.jpeg for the real
+              panel pixels. */}
           <div
             className="topbar-toggle"
             role="group"
@@ -947,18 +883,11 @@ export function App(): JSX.Element {
             style={{ gap: 4 }}
           >
             <button
-              onClick={() => {
-                setPreviewMode('svg')
-                if (shotUrl) {
-                  URL.revokeObjectURL(shotUrl)
-                  setShotUrl(null)
-                }
-                setShotOpacity(0.5)
-              }}
-              className={previewMode === 'svg' ? 'primary' : ''}
-              title="Per-widget SVG approximations (offline; ~close to the device but not pixel-perfect)"
+              onClick={() => setPreviewMode('wasm')}
+              className={previewMode === 'wasm' ? 'primary' : ''}
+              title="LVGL + widget_factory compiled to WebAssembly. Pixel-perfect, works offline; ~1.3 MB bundle (lazy-loaded)."
             >
-              SVG
+              WASM
             </button>
             <button
               onClick={() => {
@@ -970,19 +899,6 @@ export function App(): JSX.Element {
               title="Continuously poll the device for /screenshot.jpeg so the canvas shows real device pixels (needs a reachable device)"
             >
               Mirror
-            </button>
-            <button
-              onClick={() => {
-                setPreviewMode('wasm')
-                if (shotUrl) {
-                  URL.revokeObjectURL(shotUrl)
-                  setShotUrl(null)
-                }
-              }}
-              className={previewMode === 'wasm' ? 'primary' : ''}
-              title="LVGL + widget_factory compiled to WebAssembly. Pixel-perfect, works offline; ~1.3 MB bundle (lazy-loaded)."
-            >
-              WASM
             </button>
           </div>
           {previewMode === 'mirror' && liveMirrorStatus && (
@@ -1853,36 +1769,11 @@ export function App(): JSX.Element {
                         </button>
                       </div>
                     )}
-                    {/* Live-mirror AND wasm mode both render the
-                        widget surface elsewhere (JPEG image / wasm
-                        canvas). The SVG approximations would smear
-                        on top, so suppress them. Tile chrome
-                        (selection frame, drag handle, close button)
-                        still renders above, so editing works as
-                        normal. */}
-                    {previewMode === 'svg' && (
-                    <WidgetPreview
-                      w={w}
-                      value={
-                        'bind' in w && w.bind
-                          ? skValues.get(w.bind)
-                          : undefined
-                      }
-                      zones={
-                        'bind' in w && w.bind
-                          ? pathZones.get(w.bind)
-                          : undefined
-                      }
-                      description={
-                        'bind' in w && w.bind
-                          ? pathDescriptions.get(w.bind)
-                          : undefined
-                      }
-                      valueMap={skValues}
-                      zonesMap={pathZones}
-                      notifications={notifications}
-                    />
-                    )}
+                    {/* No per-tile preview render. The wasm canvas
+                        and the device-mirror overlay both paint the
+                        full widget surface elsewhere; the tile
+                        itself is just a click + drag target with
+                        chrome on selection. */}
                   </div>
                 )
               })}
