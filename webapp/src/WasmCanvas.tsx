@@ -14,7 +14,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Layout, Screen } from './schema'
-import type { MetaZone } from './api'
+import type { MetaZone, NotificationRow } from './api'
 import type { SkValue } from './skStream'
 
 // Shape of the bound emscripten module we use. We only declare what
@@ -27,6 +27,7 @@ interface JlpWasmModule {
   _jlp_set_value_int: (pathPtr: number, v: number) => void
   _jlp_set_value_bool: (pathPtr: number, v: number) => void
   _jlp_set_path_meta: (pathPtr: number, metaJsonPtr: number) => void
+  _jlp_set_notifications: (snapshotJsonPtr: number) => void
   _malloc: (n: number) => number
   _free: (p: number) => void
   stringToUTF8: (str: string, ptr: number, maxBytes: number) => void
@@ -128,6 +129,20 @@ const pushAllMeta = (
   }
 }
 
+// Replace the wasm notifications snapshot in one shot. The wasm
+// bridge diffs against its current set so removals propagate
+// (cleared notifications drop out of the list widget). Safe to
+// call before layout apply: the registry survives applies, and
+// the list widget reads from it at build time.
+const pushNotifications = (
+  mod: JlpWasmModule,
+  rows?: NotificationRow[]
+): void => {
+  const arr = rows ?? []
+  const json = JSON.stringify(arr)
+  withCString(mod, json, (p) => mod._jlp_set_notifications(p))
+}
+
 // Push every known SK value into the wasm subject registry. MUST be
 // called AFTER applyScreen — the subjects only exist once widget
 // builders ran get_or_create during the layout build. Routes each
@@ -177,6 +192,11 @@ export interface WasmCanvasProps {
    *  registry so widgets show real readings (arc fills, bar levels,
    *  toggle state, label text) instead of defaults. */
   skValues?: Map<string, SkValue>
+  /** Flat snapshot of the device-known notifications. Pushed into
+   *  the wasm notifications registry so list widgets render the
+   *  same rows the device's list shows. Empty / undefined means
+   *  "no notifications" — the wasm registry will clear. */
+  notifications?: NotificationRow[]
   /** Called with status / error strings so the toolbar can surface them. */
   onStatus?: (msg: string) => void
 }
@@ -189,6 +209,7 @@ export function WasmCanvas({
   pathZones,
   pathDescriptions,
   skValues,
+  notifications,
   onStatus,
 }: WasmCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -242,6 +263,7 @@ export function WasmCanvas({
     const screen = layout.screens[activeIdx] ?? layout.screens[0]
     if (!screen) return
     pushAllMeta(modReady, pathZones, pathDescriptions)
+    pushNotifications(modReady, notifications)
     const err = applyScreen(modReady, screen)
     if (err) {
       onStatus?.(`apply: ${err}`)
@@ -260,6 +282,7 @@ export function WasmCanvas({
     pathZones,
     pathDescriptions,
     skValues,
+    notifications,
     onStatus,
   ])
 

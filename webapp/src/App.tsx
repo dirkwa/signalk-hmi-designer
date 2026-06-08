@@ -4,7 +4,7 @@ import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
 import { WasmCanvas } from './WasmCanvas'
-import { useSkValues } from './skStream'
+import { useNotifications, useSkValues } from './skStream'
 import { DEFAULT_TAB_STRIP_HEIGHT, STATUS_OVERLAY_HEIGHT } from './schema'
 
 import {
@@ -389,6 +389,30 @@ export function App(): JSX.Element {
   )
   const skValues = useSkValues(boundPaths)
 
+  // Notifications widgets are fed by polling SK's notifications.*
+  // tree. Only poll if a layout actually uses a notifications widget
+  // anywhere (don't hammer SK otherwise). If any widget asks for
+  // include_cleared, widen the poll to cover cleared rows; the
+  // wasm-side notifications registry filters per-widget when it
+  // renders.
+  const wantsNotifications = useMemo(
+    () =>
+      screens.some((s) =>
+        s.widgets.some((w) => w.type === 'notifications')
+      ),
+    [screens]
+  )
+  const wantsCleared = useMemo(
+    () =>
+      screens.some((s) =>
+        s.widgets.some(
+          (w) =>
+            w.type === 'notifications' && w.include_cleared === true
+        )
+      ),
+    [screens]
+  )
+  const notifications = useNotifications(wantsNotifications, wantsCleared)
   const selected = screen.widgets.find((w) => w.id === selectedId) ?? null
 
   const filteredPaths = useMemo(() => {
@@ -1690,6 +1714,7 @@ export function App(): JSX.Element {
                 pathZones={pathZones}
                 pathDescriptions={pathDescriptions}
                 skValues={skValues}
+                notifications={notifications}
                 onStatus={setWasmStatus}
               />
             )}
