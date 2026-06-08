@@ -179,14 +179,19 @@ function NumberField(props: {
   min?: number
 }): JSX.Element {
   const [draft, setDraft] = useState<string>(String(props.value))
-  // Sync from canonical value when it changes externally (e.g. paste,
-  // load layout), but NOT while the user is actively typing — checked
-  // by comparing the parsed draft to the canonical value.
+  // Track which canonical value the current draft corresponds to so
+  // we can detect external changes (paste, load layout) without
+  // stepping on the user's in-progress edits. When onChange commits
+  // a parsed value, we remember it here; the next render where
+  // props.value matches the lastCommittedRef means "we caused this,
+  // leave draft alone." When props.value doesn't match, it's an
+  // external write and we resync.
+  const lastCommitted = useRef<number>(props.value)
   useEffect(() => {
-    const n = Number(draft)
-    if (Number.isFinite(n) && n === props.value) return
+    if (props.value === lastCommitted.current) return
+    lastCommitted.current = props.value
     setDraft(String(props.value))
-  }, [props.value])  // eslint-disable-line
+  }, [props.value])
   return (
     <input
       type="text"
@@ -201,6 +206,7 @@ function NumberField(props: {
         const n = Number(txt)
         if (txt === '' || !Number.isFinite(n)) return
         if (props.min !== undefined && n < props.min) return
+        lastCommitted.current = n
         props.onChange(n)
       }}
     />
