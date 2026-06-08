@@ -774,6 +774,11 @@ export function App(): JSX.Element {
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
         for (const p of bindsOf(w)) {
+          // Capture the widget id + (for bargroup) sub-bar bind so
+          // the async meta resolution can route the displayUnits
+          // prefill back to the right slot without re-traversing
+          // the layout.
+          const widId = w.id
           void fetchPathMeta(p).then((meta) => {
             if (!meta) return
             if (meta.zones && meta.zones.length > 0) {
@@ -790,6 +795,64 @@ export function App(): JSX.Element {
                 return next
               })
             }
+            // Retroactive displayUnits prefill: existing layouts
+            // (saved before the prefill code was added, or saved
+            // before the user set unitsPreferences in SK) have raw
+            // values and no `display` block. Patch those in here
+            // without overwriting user-edited fields.
+            const d = deriveDisplayDefaults(meta)
+            if (!d) return
+            setScreens((prev) =>
+              prev.map((s) => ({
+                ...s,
+                widgets: s.widgets.map((wid) => {
+                  if (wid.id !== widId) return wid
+                  if (wid.type === 'bargroup') {
+                    const bars2 = wid.bars.map((b) => {
+                      if (b.bind !== p) return b
+                      const cur = b.display ?? {}
+                      return {
+                        ...b,
+                        display: {
+                          unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                          scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                          offset:
+                            cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                          decimals:
+                            cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
+                        },
+                      }
+                    })
+                    return { ...wid, bars: bars2 }
+                  }
+                  if (
+                    wid.type !== 'label' &&
+                    wid.type !== 'arc' &&
+                    wid.type !== 'bar' &&
+                    wid.type !== 'button'
+                  ) {
+                    return wid
+                  }
+                  // Only fill for the widget whose bind matches the
+                  // path we just fetched meta for — a widget can have
+                  // a bind set without it matching `p` if user
+                  // changed it before the fetch resolved.
+                  if ((wid as { bind?: string }).bind !== p) return wid
+                  const cur = wid.display ?? {}
+                  return {
+                    ...wid,
+                    display: {
+                      unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                      scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                      offset:
+                        cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                      decimals:
+                        cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
+                    },
+                  } as Widget
+                }),
+              }))
+            )
           })
         }
       }
@@ -1940,6 +2003,11 @@ export function App(): JSX.Element {
                       updateWidget(selected.id, { bars: next })
                       // Pre-fetch meta so zone tinting + description
                       // are live for the sub-bar's bound path too.
+                      // Also auto-fill the sub-bar's display block
+                      // from SK displayUnits — same conversion the
+                      // widget-level bind picker does for label/arc/
+                      // bar/button. Only fills empty/default fields,
+                      // never overwrites a user-set value.
                       void fetchPathMeta(p).then((meta) => {
                         if (!meta) return
                         if (meta.zones && meta.zones.length > 0) {
@@ -1956,6 +2024,31 @@ export function App(): JSX.Element {
                             return nextMap
                           })
                         }
+                        const d = deriveDisplayDefaults(meta)
+                        if (!d) return
+                        setScreen((prev) => ({
+                          ...prev,
+                          widgets: prev.widgets.map((wid) => {
+                            if (wid.id !== selected.id) return wid
+                            if (wid.type !== 'bargroup') return wid
+                            const bars2 = wid.bars.map((b, j) => {
+                              if (j !== i) return b
+                              const cur = b.display ?? {}
+                              return {
+                                ...b,
+                                display: {
+                                  unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                                  scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                                  offset:
+                                    cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                                  decimals:
+                                    cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
+                                },
+                              }
+                            })
+                            return { ...wid, bars: bars2 }
+                          }),
+                        }))
                       })
                       return
                     }
