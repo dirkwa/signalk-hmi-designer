@@ -1771,6 +1771,9 @@ export function App(): JSX.Element {
                 activeIdx={activeIdx}
                 displayW={displayW}
                 displayH={displayH}
+                pathZones={pathZones}
+                pathDescriptions={pathDescriptions}
+                skValues={skValues}
                 onStatus={setWasmStatus}
               />
             )}

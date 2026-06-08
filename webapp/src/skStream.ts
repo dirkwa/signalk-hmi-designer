@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchNotifications, type NotificationRow } from './api'
 
-type SkValue = number | string | boolean | null
+export type SkValue = number | string | boolean | null
 
 interface DeltaMessage {
   context?: string

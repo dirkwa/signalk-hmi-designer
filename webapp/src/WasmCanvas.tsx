@@ -14,6 +14,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Layout, Screen } from './schema'
+import type { MetaZone } from './api'
+import type { SkValue } from './skStream'
 
 // Shape of the bound emscripten module we use. We only declare what
 // we actually touch — the rest stays opaque so unrelated emscripten
@@ -24,6 +26,7 @@ interface JlpWasmModule {
   _jlp_set_value_float: (pathPtr: number, v: number) => void
   _jlp_set_value_int: (pathPtr: number, v: number) => void
   _jlp_set_value_bool: (pathPtr: number, v: number) => void
+  _jlp_set_path_meta: (pathPtr: number, metaJsonPtr: number) => void
   _malloc: (n: number) => number
   _free: (p: number) => void
   stringToUTF8: (str: string, ptr: number, maxBytes: number) => void
@@ -96,12 +99,84 @@ const applyScreen = (mod: JlpWasmModule, screen: Screen): string | null => {
   return errStr || null
 }
 
+// Push SK meta (zones + description) for every path the designer
+// has fetched so the wasm zone_registry can color widgets the same
+// way the device does. Meta is per-path keyed; pushing the same
+// path twice just overwrites in-place. Cheap enough to call before
+// every layout apply (a typical helm has well under 50 bound
+// paths).
+const pushAllMeta = (
+  mod: JlpWasmModule,
+  zonesMap?: Map<string, MetaZone[]>,
+  descMap?: Map<string, string>
+): void => {
+  const seen = new Set<string>()
+  zonesMap?.forEach((_, p) => seen.add(p))
+  descMap?.forEach((_, p) => seen.add(p))
+  for (const path of seen) {
+    const meta: { zones?: MetaZone[]; description?: string } = {}
+    const z = zonesMap?.get(path)
+    if (z && z.length > 0) meta.zones = z
+    const d = descMap?.get(path)
+    if (d) meta.description = d
+    const json = JSON.stringify(meta)
+    withCString(mod, path, (pathPtr) => {
+      withCString(mod, json, (metaPtr) => {
+        mod._jlp_set_path_meta(pathPtr, metaPtr)
+      })
+    })
+  }
+}
+
+// Push every known SK value into the wasm subject registry. MUST be
+// called AFTER applyScreen — the subjects only exist once widget
+// builders ran get_or_create during the layout build. Routes each
+// value to the typed setter that matches what the bridge expects
+// for its subject kind (which the designer doesn't directly know;
+// we use the JS value's runtime type as a proxy, matching how
+// SubjectKind is chosen by each build_*).
+const pushAllValues = (
+  mod: JlpWasmModule,
+  values?: Map<string, SkValue>
+): void => {
+  if (!values || values.size === 0) return
+  for (const [path, v] of values) {
+    if (v === null || v === undefined) continue
+    withCString(mod, path, (pathPtr) => {
+      if (typeof v === 'boolean') {
+        mod._jlp_set_value_bool(pathPtr, v ? 1 : 0)
+      } else if (typeof v === 'number') {
+        // Arc / bar / range widgets use float subjects; toggles use
+        // int subjects (the typed setters are no-ops if the subject
+        // kind doesn't match, so it's safe to call both).
+        mod._jlp_set_value_float(pathPtr, v)
+        mod._jlp_set_value_int(pathPtr, Math.round(v))
+      }
+      // strings: not yet supported in the wasm bridge (the firmware
+      // has SubjectKind::String but none of the v0.2 widgets read
+      // it; label widgets prefer the SK description over the
+      // formatted value anyway, via pathDescriptions).
+    })
+  }
+}
+
 export interface WasmCanvasProps {
   layout: Layout
   activeIdx: number
   /** Width/height of the device — matches the device's /hello.display. */
   displayW: number
   displayH: number
+  /** SK zone metadata per bound path. Pushed into the wasm bridge so
+   *  the LVGL widgets render with the same per-state colors the
+   *  device shows. Zones live in raw units. */
+  pathZones?: Map<string, MetaZone[]>
+  /** Optional per-path SK description (used by label widgets that
+   *  prefer the human-readable name over the raw value). */
+  pathDescriptions?: Map<string, string>
+  /** Live SK values per bound path. Pushed into the wasm subject
+   *  registry so widgets show real readings (arc fills, bar levels,
+   *  toggle state, label text) instead of defaults. */
+  skValues?: Map<string, SkValue>
   /** Called with status / error strings so the toolbar can surface them. */
   onStatus?: (msg: string) => void
 }
@@ -111,6 +186,9 @@ export function WasmCanvas({
   activeIdx,
   displayW,
   displayH,
+  pathZones,
+  pathDescriptions,
+  skValues,
   onStatus,
 }: WasmCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -152,17 +230,38 @@ export function WasmCanvas({
     // empty dep array is correct here.
   }, [])  // eslint-disable-line
 
-  // Re-apply the layout whenever the active screen or any of its
-  // widgets change. The wasm-side build is fast (<5 ms for the
-  // four-widget smoke test); fine to do on every state mutation.
+  // Re-apply the layout whenever the active screen, any of its
+  // widgets, or any path meta changes. The wasm-side build is fast
+  // (<5 ms for the four-widget smoke test); fine to do on every
+  // state mutation. Meta MUST be pushed BEFORE the layout apply —
+  // zone_registry.match() is consulted as widgets build, and any
+  // path without a meta entry at that moment renders with the
+  // fallback color even if the meta arrives a tick later.
   useEffect(() => {
     if (!modReady) return
     const screen = layout.screens[activeIdx] ?? layout.screens[0]
     if (!screen) return
+    pushAllMeta(modReady, pathZones, pathDescriptions)
     const err = applyScreen(modReady, screen)
-    if (err) onStatus?.(`apply: ${err}`)
-    else onStatus?.(`${screen.widgets.length} widgets`)
-  }, [modReady, layout, activeIdx, onStatus])
+    if (err) {
+      onStatus?.(`apply: ${err}`)
+      return
+    }
+    // Values flow AFTER apply: subjects are created during the
+    // build, so any path's lv_subject_t exists only once apply
+    // succeeds. Re-pushing every known value here is cheap and
+    // covers both fresh applies and downstream value updates.
+    pushAllValues(modReady, skValues)
+    onStatus?.(`${screen.widgets.length} widgets`)
+  }, [
+    modReady,
+    layout,
+    activeIdx,
+    pathZones,
+    pathDescriptions,
+    skValues,
+    onStatus,
+  ])
 
   return (
     <canvas
