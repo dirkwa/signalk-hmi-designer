@@ -173,7 +173,11 @@ export function WasmCanvas({
         display: 'block',
         position: 'absolute',
         inset: 0,
-        zIndex: 80,
+        // Sit BEHIND tile chrome (the chrome bar bumps to z=50 in
+        // wasm mode via app.css; outline stays visible via
+        // !important on the same selector). pointer-events: none so
+        // clicks pass through to the React-Grid-Layout tiles.
+        zIndex: 10,
         pointerEvents: 'none',
         background: '#0d1117',
       }}

@@ -315,6 +315,11 @@ button.x { padding: 0 6px; font-size: 14px; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
+  /* Selected tile must paint above the WASM canvas (z-index: 10 in
+     WasmCanvas) so its outline + chrome bar stay visible in WYSIWYG
+     mode. Unselected tiles can stay at auto (they're click targets
+     only; their previews live in the canvas underneath). */
+  z-index: 20;
 }
 
 /* Selection chrome — only rendered when selected. */
