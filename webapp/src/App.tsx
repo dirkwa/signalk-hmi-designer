@@ -76,6 +76,15 @@ function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>
         type: 'label',
         display: { unit: '', scale: 1, offset: 0, decimals: 1 }
       }
+    case 'value':
+      return {
+        ...base,
+        type: 'value',
+        bind: '',
+        w: 180,
+        h: 100,
+        display: { unit: '', scale: 1, offset: 0, decimals: 1 }
+      }
     case 'toggle':
       return { ...base, type: 'toggle', bind: '' }
     case 'arc':
@@ -675,6 +684,7 @@ export function App(): JSX.Element {
           // Only widgets that have a display block get prefilled.
           if (
             w.type !== 'label' &&
+            w.type !== 'value' &&
             w.type !== 'arc' &&
             w.type !== 'bar' &&
             w.type !== 'button'
@@ -827,6 +837,7 @@ export function App(): JSX.Element {
                   }
                   if (
                     wid.type !== 'label' &&
+                    wid.type !== 'value' &&
                     wid.type !== 'arc' &&
                     wid.type !== 'bar' &&
                     wid.type !== 'button'
@@ -954,6 +965,7 @@ export function App(): JSX.Element {
     if (!hello)
       return [
         'label',
+        'value',
         'toggle',
         'arc',
         'bar',
@@ -964,6 +976,7 @@ export function App(): JSX.Element {
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
         k === 'label' ||
+        k === 'value' ||
         k === 'toggle' ||
         k === 'arc' ||
         k === 'bar' ||
@@ -1659,6 +1672,7 @@ export function App(): JSX.Element {
                 </>
               )}
               {(selected.type === 'label' ||
+                selected.type === 'value' ||
                 selected.type === 'arc' ||
                 selected.type === 'bar') && (
                 <>

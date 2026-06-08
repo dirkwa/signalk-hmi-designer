@@ -7,6 +7,7 @@ export const SCHEMA_VERSION = 1 as const
 
 export type WidgetKind =
   | 'label'
+  | 'value'
   | 'toggle'
   | 'arc'
   | 'bar'
@@ -43,6 +44,19 @@ export interface WidgetCommon {
 
 export interface LabelWidget extends WidgetCommon {
   type: 'label'
+}
+
+/** Big-number readout tile. Always shows the formatted live value
+ *  as the dominant glyph; small caption top-left, small unit
+ *  bottom-right. Zone state tints the whole tile background by
+ *  default — `bg_color`/`fg_color` apply only when no SK zone
+ *  matches the current value. Use this whenever the operator needs
+ *  to read a number at a glance (SOC %, instantaneous current,
+ *  speed over ground, etc). */
+export interface ValueWidget extends WidgetCommon {
+  type: 'value'
+  bind: string
+  display?: DisplayConfig
 }
 
 export interface ToggleWidget extends WidgetCommon {
@@ -158,6 +172,7 @@ export interface ButtonWidget extends WidgetCommon {
 
 export type Widget =
   | LabelWidget
+  | ValueWidget
   | ToggleWidget
   | ArcWidget
   | BarWidget
