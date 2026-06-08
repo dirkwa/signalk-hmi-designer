@@ -185,6 +185,14 @@ export function App(): JSX.Element {
   >(undefined)
   const [showNotifModal, setShowNotifModal] = useState<boolean>(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Interim position of a currently-dragging/resizing tile. Set by
+  // RGL onDrag/onResize, cleared on stop. Read by the WASM canvas
+  // overlay so the LVGL render moves in lockstep with the chrome.
+  // Null when nothing is being dragged.
+  const [dragPreview, setDragPreview] = useState<{
+    id: string
+    grid: GLLayout
+  } | null>(null)
   // Which bind field is currently focused. The path picker on the
   // right routes its click to whichever target is focused:
   //  - 'widget'    -> top-level widget bind (default, single-bind widgets)
@@ -357,6 +365,22 @@ export function App(): JSX.Element {
     [screen.widgets, colPxW]
   )
 
+  // Effective layout for the WASM canvas: layoutDoc with the
+  // currently-dragging widget's coords overridden from dragPreview
+  // so the wasm render moves in real-time as the user drags. When
+  // nothing's being dragged, this is just layoutDoc verbatim.
+  const wasmLayoutDoc = useMemo<Layout>(() => {
+    if (!dragPreview) return layoutDoc
+    const apply = (w: Widget): Widget =>
+      w.id === dragPreview.id ? applyGrid(w, dragPreview.grid, colPxW) : w
+    return {
+      ...layoutDoc,
+      screens: layoutDoc.screens.map((s, i) =>
+        i === activeIdx ? { ...s, widgets: s.widgets.map(apply) } : s
+      ),
+    }
+  }, [layoutDoc, dragPreview, activeIdx, colPxW])
+
   // Live SK values for any bound widget. The hook re-subscribes when
   // the set of bound paths changes. Includes top-level widget binds
   // AND sub-bar binds inside bargroup widgets so per-bar tinting and
@@ -412,6 +436,7 @@ export function App(): JSX.Element {
     _oldItem: GLLayout,
     newItem: GLLayout
   ): void => {
+    setDragPreview(null)
     setScreen((prev) => ({
       ...prev,
       widgets: prev.widgets.map((w) =>
@@ -420,6 +445,22 @@ export function App(): JSX.Element {
     }))
   }
   const onResizeStop = onDragStop
+  // During a drag/resize, RGL gives us interim positions on every
+  // tick. We hold the interim shape in `dragPreview` (NOT in the
+  // canonical screens state, which would grid-quantize the pixel
+  // positions and drift widgets over time per the onDragStop
+  // comment above). The wasm canvas reads from dragPreview when
+  // set, falling back to the canonical layout otherwise — so
+  // WASM mode shows the widget moving in real LVGL as you drag,
+  // while SVG mode (which already updates from screens state)
+  // sees no behaviour change.
+  const onDragOrResize = (
+    _layout: GLLayout[],
+    _oldItem: GLLayout,
+    newItem: GLLayout
+  ): void => {
+    setDragPreview({ id: newItem.i, grid: newItem })
+  }
 
   /* ---- screen management ---- */
 
@@ -1726,7 +1767,7 @@ export function App(): JSX.Element {
                 clicks. */}
             {previewMode === 'wasm' && (
               <WasmCanvas
-                layout={layoutDoc}
+                layout={wasmLayoutDoc}
                 activeIdx={activeIdx}
                 displayW={displayW}
                 displayH={displayH}
@@ -1778,6 +1819,8 @@ export function App(): JSX.Element {
               // selected widgets), so unselected widgets behave as
               // pure click targets.
               draggableHandle=".chrome"
+              onDrag={onDragOrResize}
+              onResize={onDragOrResize}
               onDragStop={onDragStop}
               onResizeStop={onResizeStop}
             >
