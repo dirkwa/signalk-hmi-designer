@@ -1986,19 +1986,23 @@ export function App(): JSX.Element {
                 the canvas itself; we pointer-events: none in
                 WasmCanvas so RGL drag handles still receive
                 clicks. */}
-            {previewMode === 'wasm' && (
-              <WasmCanvas
-                layout={wasmLayoutDoc}
-                activeIdx={activeIdx}
-                displayW={displayW}
-                displayH={displayH}
-                pathZones={pathZones}
-                pathDescriptions={pathDescriptions}
-                skValues={skValues}
-                notifications={notifications}
-                onStatus={setWasmStatus}
-              />
-            )}
+            {/* Always mount the wasm canvas so emscripten SDL stays
+                bound to the same DOM element for the whole session.
+                Hide it when another preview mode is active — toggling
+                back to WASM then just flips display:block, no
+                remount, no rebuild. */}
+            <WasmCanvas
+              layout={wasmLayoutDoc}
+              activeIdx={activeIdx}
+              displayW={displayW}
+              displayH={displayH}
+              pathZones={pathZones}
+              pathDescriptions={pathDescriptions}
+              skValues={skValues}
+              notifications={notifications}
+              visible={previewMode === 'wasm'}
+              onStatus={setWasmStatus}
+            />
             <div
               className="canvas-content"
               style={{

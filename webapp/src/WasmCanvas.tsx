@@ -194,6 +194,14 @@ export interface WasmCanvasProps {
   /** Width/height of the device — matches the device's /hello.display. */
   displayW: number
   displayH: number
+  /** When false, the canvas hides itself but the wasm module stays
+   *  initialized and bound to this DOM element. Toggling back to
+   *  true shows the most recent LVGL render instantly — without
+   *  this, switching mirror→WASM would unmount the canvas and lose
+   *  the SDL binding for the rest of the session (emscripten SDL
+   *  binds to one DOM canvas at module init; you can't rebind to a
+   *  new element). */
+  visible: boolean
   /** SK zone metadata per bound path. Pushed into the wasm bridge so
    *  the LVGL widgets render with the same per-state colors the
    *  device shows. Zones live in raw units. */
@@ -223,6 +231,7 @@ export function WasmCanvas({
   pathDescriptions,
   skValues,
   notifications,
+  visible,
   onStatus,
 }: WasmCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -305,7 +314,11 @@ export function WasmCanvas({
       width={displayW}
       height={displayH}
       style={{
-        display: 'block',
+        // Always mounted (see `visible` prop docstring); just hide
+        // it when another preview mode owns the canvas. Layout
+        // still applies in the background so toggling back is
+        // instant.
+        display: visible ? 'block' : 'none',
         position: 'absolute',
         inset: 0,
         // Sit BEHIND tile chrome (the chrome bar bumps to z=50 in
