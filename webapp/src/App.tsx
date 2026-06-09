@@ -1,5 +1,22 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  closestCenter,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
@@ -219,6 +236,62 @@ function NumberField(props: {
         props.onChange(n)
       }}
     />
+  )
+}
+
+/** Single tab button wired into @dnd-kit's sortable list.
+ *
+ *  The whole tab is the drag handle (touch-friendly: the user can
+ *  grab anywhere on the tab to drag it). Click activation distance
+ *  on the parent PointerSensor keeps a normal tap-to-switch from
+ *  starting a drag — only a deliberate drag move past ~5 px begins
+ *  a sort gesture.
+ *
+ *  The × close button stops propagation so a click on it never
+ *  triggers the tab switch or starts a drag. */
+function SortableTab(props: {
+  id: string
+  title: string
+  active: boolean
+  showClose: boolean
+  onActivate: () => void
+  onClose: () => void
+}): JSX.Element {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    // Bump z so the dragged tab overlays its neighbors instead of
+    // disappearing under them while in motion.
+    zIndex: isDragging ? 5 : 'auto',
+  }
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      className={`tab ${props.active ? 'active' : ''}`}
+      onClick={props.onActivate}
+      title={props.id}
+      {...attributes}
+      {...listeners}
+    >
+      {props.title || props.id}
+      {props.showClose && (
+        <span
+          className="tab-x"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onClose()
+          }}
+          title="Delete this screen"
+        >
+          ×
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -549,6 +622,41 @@ export function App(): JSX.Element {
       return next
     })
     setSelectedId(null)
+  }
+
+  // Reorder screens after a tab drag. Keeps the active screen
+  // active (its index follows along with the move) so the canvas
+  // doesn't visibly switch tabs when the user only meant to reorder.
+  const reorderScreens = (fromIdx: number, toIdx: number): void => {
+    if (fromIdx === toIdx) return
+    setScreens((prev) => arrayMove(prev, fromIdx, toIdx))
+    setActiveIdx((cur) => {
+      if (cur === fromIdx) return toIdx
+      // Active was between from and to; shift by one in the right
+      // direction since the dragged tab passed over it.
+      if (fromIdx < toIdx && cur > fromIdx && cur <= toIdx) return cur - 1
+      if (fromIdx > toIdx && cur < fromIdx && cur >= toIdx) return cur + 1
+      return cur
+    })
+  }
+
+  // Pointer + keyboard sensors. The 5 px activation distance lets a
+  // normal tap-to-switch through; a deliberate drag past that starts
+  // a sort. Keyboard works via Tab to focus + Space to pick up +
+  // arrow keys to move.
+  const sortSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+  const onTabDragEnd = (e: DragEndEvent): void => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const fromIdx = screens.findIndex((s) => s.id === active.id)
+    const toIdx = screens.findIndex((s) => s.id === over.id)
+    if (fromIdx === -1 || toIdx === -1) return
+    reorderScreens(fromIdx, toIdx)
   }
 
   const renameScreen = (idx: number, title: string): void => {
@@ -1983,34 +2091,34 @@ export function App(): JSX.Element {
                 style={{ height: `${tabStripHeight}px` }}
                 onClick={(e) => e.stopPropagation()}
               >
-                {screens.map((s, i) => (
-                  <button
-                    key={s.id}
-                    className={`tab ${i === activeIdx ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveIdx(i)
-                      setSelectedId(null)
-                    }}
-                    title={s.id}
+                <DndContext
+                  sensors={sortSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={onTabDragEnd}
+                >
+                  <SortableContext
+                    items={screens.map((s) => s.id)}
+                    strategy={horizontalListSortingStrategy}
                   >
-                    {s.title || s.id}
-                    {screens.length > 1 && i === activeIdx && (
-                      <span
-                        className="tab-x"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (
-                            confirm(`Delete screen "${s.title}"?`)
-                          )
+                    {screens.map((s, i) => (
+                      <SortableTab
+                        key={s.id}
+                        id={s.id}
+                        title={s.title || s.id}
+                        active={i === activeIdx}
+                        showClose={screens.length > 1 && i === activeIdx}
+                        onActivate={() => {
+                          setActiveIdx(i)
+                          setSelectedId(null)
+                        }}
+                        onClose={() => {
+                          if (confirm(`Delete screen "${s.title}"?`))
                             removeScreen(i)
                         }}
-                        title="Delete this screen"
-                      >
-                        ×
-                      </span>
-                    )}
-                  </button>
-                ))}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
           </div>
