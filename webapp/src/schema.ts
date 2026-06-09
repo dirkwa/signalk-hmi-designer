@@ -20,6 +20,12 @@ export interface DisplayConfig {
   scale?: number
   offset?: number
   decimals?: number
+  /** Desired pixel font size for the widget's primary text (label
+   *  caption, value readout). LVGL can't synthesize fonts at
+   *  runtime, so the firmware snaps to the closest compiled
+   *  Montserrat size at or below this value (14, 16, 20, 28, 36).
+   *  Omit to use the widget's default. */
+  font_size?: number
 }
 
 export interface WidgetCommon {
