@@ -1034,7 +1034,17 @@ export function App(): JSX.Element {
             style={{ gap: 4 }}
           >
             <button
-              onClick={() => setPreviewMode('wasm')}
+              onClick={() => {
+                setPreviewMode('wasm')
+                // Mirror leaves an <img> overlay at full opacity; if we
+                // don't tear it down on the switch back to WASM, the
+                // last-fetched JPEG sits on top of the LVGL canvas and
+                // pretends to be the live render.
+                if (shotUrl) {
+                  URL.revokeObjectURL(shotUrl)
+                  setShotUrl(null)
+                }
+              }}
               className={previewMode === 'wasm' ? 'primary' : ''}
               title="LVGL + widget_factory compiled to WebAssembly. Pixel-perfect, works offline; ~1.3 MB bundle (lazy-loaded)."
             >
