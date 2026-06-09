@@ -1855,33 +1855,38 @@ export function App(): JSX.Element {
                       }
                     />
                   </label>
-                  {(selected.type === 'label' ||
-                    selected.type === 'value') && (
-                    <label>
-                      font size
-                      <select
-                        value={selected.display?.font_size ?? 0}
-                        onChange={(e) => {
-                          const v = Number(e.target.value)
-                          updateWidget(selected.id, {
-                            display: {
-                              ...(selected.display ?? {}),
-                              font_size: v > 0 ? v : undefined
-                            }
-                          })
-                        }}
-                        title="LVGL renders fixed bitmap fonts; firmware snaps to the closest compiled size at or below this value."
-                      >
-                        <option value={0}>auto (default)</option>
-                        <option value={14}>14 px</option>
-                        <option value={16}>16 px</option>
-                        <option value={20}>20 px</option>
-                        <option value={28}>28 px</option>
-                        <option value={36}>36 px</option>
-                      </select>
-                    </label>
-                  )}
                 </>
+              )}
+              {/* Font size — applies to widgets whose primary text
+                  is configurable (label, value, toggle caption).
+                  Stand-alone so it works even for toggle, which
+                  has no unit/scale/offset/decimals block above. */}
+              {(selected.type === 'label' ||
+                selected.type === 'value' ||
+                selected.type === 'toggle') && (
+                <label>
+                  font size
+                  <select
+                    value={selected.display?.font_size ?? 0}
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      updateWidget(selected.id, {
+                        display: {
+                          ...(selected.display ?? {}),
+                          font_size: v > 0 ? v : undefined
+                        }
+                      })
+                    }}
+                    title="LVGL renders fixed bitmap fonts; firmware snaps to the closest compiled size at or below this value."
+                  >
+                    <option value={0}>auto (default)</option>
+                    <option value={14}>14 px</option>
+                    <option value={16}>16 px</option>
+                    <option value={20}>20 px</option>
+                    <option value={28}>28 px</option>
+                    <option value={36}>36 px</option>
+                  </select>
+                </label>
               )}
               {/* ---- Colors (applicable to every widget kind) ---- */}
               <div className="hr" />

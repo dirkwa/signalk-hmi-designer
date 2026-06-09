@@ -68,6 +68,10 @@ export interface ValueWidget extends WidgetCommon {
 export interface ToggleWidget extends WidgetCommon {
   type: 'toggle'
   bind: string
+  /** Only `font_size` from DisplayConfig is honored — toggle has no
+   *  unit/scale/offset/decimals since the value is bool. Lets the
+   *  caption text be sized like value/label widgets. */
+  display?: DisplayConfig
 }
 
 /** Advisory color band on an arc widget. `from` and `to` are in the
