@@ -39,8 +39,7 @@
   },
   "files": [
     "plugin/**/*",
-    "public/**/*",
-    "icon.svg"
+    "public/**/*"
   ],
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx,html}\"",
