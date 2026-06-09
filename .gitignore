@@ -1,6 +1,8 @@
 node_modules
 plugin
-public
+# Only ignore the top-level built public/; webapp/public/ holds vite
+# static source assets (icon, etc.) and must be tracked.
+/public
 *.log
 .DS_Store
 .vite
