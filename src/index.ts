@@ -150,7 +150,13 @@ const plugin = (app: ServerAPI): Plugin => {
 
         try {
           const controller = new AbortController()
-          const t = setTimeout(() => controller.abort(), 15_000)
+          // 30s timeout: device's /layout apply budget is 10s and
+          // /screenshot can take up to 6s; allow a healthy margin
+          // for the upstream + buffered response so an in-flight
+          // apply that just exceeded the device-side budget can
+          // still propagate its 504 back to the browser rather
+          // than abort here first.
+          const t = setTimeout(() => controller.abort(), 30_000)
           init.signal = controller.signal
           const upstream = await fetch(url, init)
           clearTimeout(t)
