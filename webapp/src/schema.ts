@@ -244,11 +244,11 @@ export interface LayoutDisplayConfig {
    *  any incoming notification, and a fresh layout push all re-arm
    *  the timer back to the full window. */
   idle_timeout_sec?: number
-  /** Backlight brightness percentage (0-100) when idle. Default 80.
-   *  On the Waveshare 7B the GT911 touch controller only detects
-   *  taps reliably very close to full brightness, so dim levels
-   *  below ~80% disable tap-to-wake (notifications still wake the
-   *  screen). */
+  /** Backlight brightness percentage (0-100) when idle. Default 0
+   *  (fully off). The device shows a "TAP TO WAKE" overlay while
+   *  dimmed so the first tap can't accidentally hit any widget
+   *  underneath; tap-wake works at every level. Higher values keep
+   *  the dimmed layout faintly visible. */
   idle_dim_pct?: number
 }
 
@@ -270,21 +270,20 @@ export const IDLE_TIMEOUT_PRESETS: ReadonlyArray<{
 
 /** Idle-brightness presets surfaced in the designer's Display modal.
  *
- *  The Waveshare 7B's GT911 touchscreen only detects taps reliably
- *  very close to full brightness — the LCD's sync signals desensitize
- *  the touch grid as soon as the backlight dims. 80% is therefore the
- *  default: visibly "asleep" but still tap-wakable. Lower values save
- *  more power but disable tap-wake (notifications still wake the
- *  panel regardless). */
+ *  0 % is the firmware default — fully off, true power-save. The
+ *  device shows a "TAP TO WAKE" overlay while dimmed so the first
+ *  wake-tap is consumed by the overlay instead of falling through
+ *  to a toggle or button underneath. Higher values are useful when
+ *  you want the layout content faintly visible while idle. */
 export const IDLE_DIM_PRESETS: ReadonlyArray<{
   value: number
   label: string
 }> = [
-  { value: 0, label: 'Off (notifications only)' },
-  { value: 20, label: '20% (dark, notifications only)' },
-  { value: 50, label: '50% (medium, notifications only)' },
-  { value: 80, label: '80% (default, tap-wake works)' },
-  { value: 90, label: '90% (slight dim, tap-wake)' },
+  { value: 0, label: 'Off (default, tap to wake)' },
+  { value: 10, label: '10% (very dim)' },
+  { value: 25, label: '25% (dim)' },
+  { value: 50, label: '50% (medium)' },
+  { value: 75, label: '75% (slight dim)' },
 ]
 
 /** Height in device pixels of the status overlay strip (matches the
