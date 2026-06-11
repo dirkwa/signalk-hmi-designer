@@ -5,20 +5,27 @@
 
 export const SCHEMA_VERSION = 1 as const
 
-export type WidgetKind = 'label' | 'toggle' | 'arc' | 'bar' | 'button'
+export type WidgetKind =
+  | 'label'
+  | 'value'
+  | 'toggle'
+  | 'arc'
+  | 'bar'
+  | 'bargroup'
+  | 'button'
+  | 'notifications'
 
 export interface DisplayConfig {
   unit?: string
   scale?: number
   offset?: number
   decimals?: number
-}
-
-export interface PutAction {
-  put: {
-    value: boolean | number | string
-    path?: string
-  }
+  /** Desired pixel font size for the widget's primary text (label
+   *  caption, value readout). LVGL can't synthesize fonts at
+   *  runtime, so the firmware snaps to the closest compiled
+   *  Montserrat size at or below this value (14, 16, 20, 28, 36).
+   *  Omit to use the widget's default. */
+  font_size?: number
 }
 
 export interface WidgetCommon {
@@ -31,15 +38,49 @@ export interface WidgetCommon {
   label?: string
   bind?: string
   display?: DisplayConfig
+  /** Optional fixed background color (hex e.g. "#f85149"). When the
+   *  widget binds a path and the path's SK zones match the current
+   *  value, the zone color wins. Use these for purely action-coloured
+   *  widgets (STOP=red, ACK=yellow) that have no SK feedback loop. */
+  bg_color?: string
+  /** Optional fixed foreground color (value text / arc indicator).
+   *  Same zone-wins precedence as bg_color. */
+  fg_color?: string
 }
 
 export interface LabelWidget extends WidgetCommon {
   type: 'label'
 }
 
+/** Big-number readout tile. Always shows the formatted live value
+ *  as the dominant glyph; small caption top-left, small unit
+ *  bottom-right. Zone state tints the whole tile background by
+ *  default — `bg_color`/`fg_color` apply only when no SK zone
+ *  matches the current value. Use this whenever the operator needs
+ *  to read a number at a glance (SOC %, instantaneous current,
+ *  speed over ground, etc). */
+export interface ValueWidget extends WidgetCommon {
+  type: 'value'
+  bind: string
+  display?: DisplayConfig
+}
+
 export interface ToggleWidget extends WidgetCommon {
   type: 'toggle'
   bind: string
+  /** Only `font_size` from DisplayConfig is honored — toggle has no
+   *  unit/scale/offset/decimals since the value is bool. Lets the
+   *  caption text be sized like value/label widgets. */
+  display?: DisplayConfig
+}
+
+/** Advisory color band on an arc widget. `from` and `to` are in the
+ *  arc's display-space (after `display.scale`/`offset`). Painted as
+ *  a thin ring behind the live indicator. */
+export interface ArcBand {
+  from: number
+  to: number
+  color: string
 }
 
 export interface ArcWidget extends WidgetCommon {
@@ -49,6 +90,12 @@ export interface ArcWidget extends WidgetCommon {
   max: number
   start_angle?: number
   end_angle?: number
+  /** N evenly-spaced major tick marks around the arc; 0/omit = none. */
+  ticks?: number
+  /** Print min, max, and intermediate tick values around the arc. */
+  tick_labels?: boolean
+  /** Advisory colored bands painted as a ring behind the indicator. */
+  bands?: ArcBand[]
 }
 
 export interface BarWidget extends WidgetCommon {
@@ -59,22 +106,114 @@ export interface BarWidget extends WidgetCommon {
   vertical?: boolean
 }
 
+/** One bar inside a bargroup. Independent bind/range/display so each
+ *  bar can pull from a different SK path with its own units. */
+export interface BarGroupBar {
+  label: string
+  bind: string
+  min: number
+  max: number
+  display?: DisplayConfig
+}
+
+/** Group of N bars under a single caption. Each bar binds
+ *  independently; SK zones tint each bar individually. */
+export interface BarGroupWidget extends WidgetCommon {
+  type: 'bargroup'
+  bars: BarGroupBar[]
+}
+
+/** One column in a notifications-list widget. `field` is a dotted
+ *  path inside the row object (e.g. `"path"`, `"state"`, `"message"`,
+ *  `"createdAt"`). `format` is a tiny printf-style template applied
+ *  when the field is rendered. */
+export interface ListColumn {
+  label: string
+  field: string
+  width?: number
+  /** printf-like template, e.g. "%.2f nm" or "%H:%M" for time
+   *  strings (designer implements a minimal strftime subset). */
+  format?: string
+}
+
+/** Tabular notifications viewer.
+ *
+ *  Renders rows from the device's notifications registry (a flat
+ *  array of `{path, state, message, createdAt?, ...}` derived from
+ *  every `notifications.*` SK path the device has seen). The
+ *  designer mirrors that array client-side by polling SK.
+ *
+ *  Today's only data source is `notifications`. A future generic
+ *  table widget (bind: arbitrary array path, vessels.* iterator,
+ *  etc.) would land as a separate kind. */
+export interface NotificationsWidget extends WidgetCommon {
+  type: 'notifications'
+  max_rows?: number
+  row_height?: number
+  columns: ListColumn[]
+  /** Optional field that names a zone state (alert/warn/etc.) used
+   *  to tint each row's background per the maritime palette. */
+  row_color_field?: string
+  /** Include cleared entries (state="normal"/"nominal"). Default
+   *  false — a "pending" list shouldn't show what's already
+   *  cleared. Set true for an audit-style snapshot of every known
+   *  notification path. */
+  include_cleared?: boolean
+}
+
+/** Momentary / hold-to-act button.
+ *
+ *  - `bind` (required): the SK path to PUT.
+ *  - `press_value`: value sent on press.
+ *  - `release_value` (optional): value sent on release. Omit for a
+ *    one-shot action like ACK.
+ *  - `hold_ms` (optional): when set, the press_value PUT only fires
+ *    after the button has been held this long; releasing earlier
+ *    cancels with no PUT. Use as a safety latch for STOP, anchor
+ *    release, etc.
+ */
 export interface ButtonWidget extends WidgetCommon {
   type: 'button'
-  action: PutAction
+  bind: string
+  press_value: boolean | number | string
+  release_value?: boolean | number | string
+  hold_ms?: number
 }
 
 export type Widget =
   | LabelWidget
+  | ValueWidget
   | ToggleWidget
   | ArcWidget
   | BarWidget
+  | BarGroupWidget
   | ButtonWidget
+  | NotificationsWidget
 
 export interface Screen {
   id: string
   title: string
   widgets: Widget[]
+}
+
+/** Notification states ordered by ascending severity. Matches the
+ *  SignalK convention. */
+export type NotificationState =
+  | 'alert'
+  | 'warn'
+  | 'alarm'
+  | 'emergency'
+
+/** Layout-level alert-overlay config. The overlay is a runtime
+ *  artifact (modal that pops above the active screen when SK
+ *  delivers a qualifying notification); the designer doesn't
+ *  preview it on the canvas. */
+export interface NotificationsConfig {
+  enabled: boolean
+  /** Only notifications with state >= min_state trigger the modal. */
+  min_state: NotificationState
+  /** v1: always "modal" (locked in the designer). */
+  ack_method?: 'modal'
 }
 
 export interface Layout {
@@ -89,8 +228,63 @@ export interface Layout {
    *  ignored otherwise. Default 56 px. */
   tab_strip_height?: number
   theme?: { bg?: string; fg?: string; accent?: string }
+  /** Layout-level alert-overlay configuration. Default behaviour
+   *  when omitted: enabled, min_state="alarm", modal ack. */
+  notifications?: NotificationsConfig
+  /** Backlight power-save settings. */
+  display?: LayoutDisplayConfig
   screens: Screen[]
 }
+
+/** Layout-level display chrome. Distinct from the per-widget
+ *  DisplayConfig (which controls value formatting). */
+export interface LayoutDisplayConfig {
+  /** Seconds of user inactivity before the backlight dims down.
+   *  0 (or omitted) disables the dimmer — backlight stays on. Touch,
+   *  any incoming notification, and a fresh layout push all re-arm
+   *  the timer back to the full window. */
+  idle_timeout_sec?: number
+  /** Backlight brightness percentage (0-100) when idle. Default 0
+   *  (fully off). The device shows a "TAP TO WAKE" overlay while
+   *  dimmed so the first tap can't accidentally hit any widget
+   *  underneath; tap-wake works at every level. Higher values keep
+   *  the dimmed layout faintly visible. */
+  idle_dim_pct?: number
+}
+
+/** Preset idle-timeout values surfaced in the designer's Display
+ *  modal. 0 = never (always on). */
+export const IDLE_TIMEOUT_PRESETS: ReadonlyArray<{
+  value: number
+  label: string
+}> = [
+  { value: 0, label: 'Never (always on)' },
+  { value: 60, label: '1 min' },
+  { value: 120, label: '2 min' },
+  { value: 300, label: '5 min' },
+  { value: 600, label: '10 min' },
+  { value: 900, label: '15 min' },
+  { value: 1800, label: '30 min' },
+  { value: 3600, label: '60 min' },
+]
+
+/** Idle-brightness presets surfaced in the designer's Display modal.
+ *
+ *  0 % is the firmware default — fully off, true power-save. The
+ *  device shows a "TAP TO WAKE" overlay while dimmed so the first
+ *  wake-tap is consumed by the overlay instead of falling through
+ *  to a toggle or button underneath. Higher values are useful when
+ *  you want the layout content faintly visible while idle. */
+export const IDLE_DIM_PRESETS: ReadonlyArray<{
+  value: number
+  label: string
+}> = [
+  { value: 0, label: 'Off (default, tap to wake)' },
+  { value: 10, label: '10% (very dim)' },
+  { value: 25, label: '25% (dim)' },
+  { value: 50, label: '50% (medium)' },
+  { value: 75, label: '75% (slight dim)' },
+]
 
 /** Height in device pixels of the status overlay strip (matches the
  *  firmware constant kStripHeight in status_overlay.cpp). */
@@ -105,7 +299,12 @@ export interface HelloResponse {
   name?: string
   hostname?: string
   firmware?: string
-  display?: { w: number; h: number }
+  display?: {
+    w: number
+    h: number
+    idle_timeout?: boolean
+    idle_dim_pct?: boolean
+  }
   widgets: Record<string, { fields: string[] }>
   active_layout_name?: string
   layout_source?: string

@@ -241,6 +241,89 @@ export async function fetchPathMeta(skPath: string): Promise<PathMeta | null> {
   return (await r.json()) as PathMeta
 }
 
+/** One row in the synthetic `notifications` virtual array (the
+ *  same shape the firmware exposes from its notifications registry
+ *  when a list widget binds to `bind: "notifications"`). */
+export interface NotificationRow {
+  path: string
+  state: string
+  message: string
+  method?: string[]
+  createdAt?: string
+}
+
+/** Fetch the notifications.* SK tree, walk it client-side, and
+ *  return a flat array of `{path, state, message, method?,
+ *  createdAt?}` rows. SK exposes notifications as a tree; the device
+ *  flattens it internally for its alert overlay / list widget, so
+ *  the designer must do the same to render a faithful canvas
+ *  preview. Returns an empty array if the tree is missing or empty.
+ */
+export interface FetchNotificationsOpts {
+  /** Include cleared entries (state="normal"/"nominal"). Default
+   *  false. The firmware notifications_registry drops cleared
+   *  states; matching that here keeps the canvas preview honest
+   *  for the common "pending alarms" list. Set true for an
+   *  audit-style view that mirrors the raw SK tree. */
+  includeCleared?: boolean
+}
+
+export async function fetchNotifications(
+  opts: FetchNotificationsOpts = {}
+): Promise<NotificationRow[]> {
+  let r: Response
+  try {
+    r = await fetch('/signalk/v1/api/vessels/self/notifications')
+  } catch {
+    return []
+  }
+  if (!r.ok) return []
+  const tree = (await r.json()) as unknown
+  const out: NotificationRow[] = []
+  const includeCleared = opts.includeCleared ?? false
+
+  function walk(node: unknown, pathParts: string[]): void {
+    if (!node || typeof node !== 'object') return
+    const rec = node as Record<string, unknown>
+    // Leaf detection: SK notification leaves have `value.state` and
+    // `value.message`. Trees branch by sub-keys.
+    if (
+      typeof rec.value === 'object' &&
+      rec.value !== null &&
+      typeof (rec.value as Record<string, unknown>).state === 'string'
+    ) {
+      const v = rec.value as Record<string, unknown>
+      // Normalize "warning" -> "warn"; some sources emit one, some
+      // the other, and the palette + firmware speak "warn".
+      const rawState = String(v.state ?? '')
+      const state = rawState === 'warning' ? 'warn' : rawState
+      if (
+        !includeCleared &&
+        (state === 'normal' || state === 'nominal')
+      ) {
+        return
+      }
+      out.push({
+        path: pathParts.join('.'),
+        state,
+        message: String(v.message ?? ''),
+        method: Array.isArray(v.method)
+          ? (v.method as string[])
+          : undefined,
+        createdAt:
+          typeof v.createdAt === 'string' ? v.createdAt : undefined
+      })
+      return
+    }
+    for (const [k, sub] of Object.entries(rec)) {
+      if (k === 'value' || k === '$source' || k === 'timestamp') continue
+      walk(sub, [...pathParts, k])
+    }
+  }
+  walk(tree, [])
+  return out
+}
+
 /**
  * Derive display defaults from SK metadata. Returns null if `meta` has
  * no displayUnits at all. Recognised formulas:

@@ -39,22 +39,25 @@
   },
   "files": [
     "plugin/**/*",
-    "public/**/*",
-    "icon.svg"
+    "public/**/*"
   ],
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx,html}\"",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx}\"",
     "typecheck:webapp": "tsc -p tsconfig.webapp.json",
     "build:plugin": "tsc",
-    "build:webapp": "vite build",
+    "copy:wasm": "bash scripts/copy-wasm.sh",
+    "build:webapp": "npm run copy:wasm && vite build",
     "build": "npm run build:plugin && npm run typecheck:webapp && npm run build:webapp",
     "build:all": "npm run lint && npm run build && npm run test",
-    "dev": "vite",
+    "dev": "npm run copy:wasm && vite",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@signalk/server-api": "*",
     "express": "^4.19.0"
   },

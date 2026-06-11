@@ -103,14 +103,15 @@ header {
   margin: 0;
 }
 
-/* Inline-editable screen title in the canvas h3. */
+/* Inline-editable screen title in the canvas h3. Render the stored
+   value verbatim — uppercasing here would lie about what the device
+   actually displays. */
 .screen-title {
   background: transparent;
   border: 1px solid transparent;
   color: var(--fg);
   font-size: 13px;
   font-weight: normal;
-  text-transform: uppercase;
   padding: 2px 4px;
   border-radius: 3px;
   width: 200px;
@@ -314,6 +315,11 @@ button.x { padding: 0 6px; font-size: 14px; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
+  /* Selected tile must paint above the WASM canvas (z-index: 10 in
+     WasmCanvas) so its outline + chrome bar stay visible in WYSIWYG
+     mode. Unselected tiles can stay at auto (they're click targets
+     only; their previews live in the canvas underneath). */
+  z-index: 20;
 }
 
 /* Selection chrome — only rendered when selected. */
@@ -351,204 +357,42 @@ button.x { padding: 0 6px; font-size: 14px; }
 }
 .chrome .x:hover { background: rgba(0, 0, 0, 0.3); }
 
-/* ---------- widget previews ---------- */
-
-.wp {
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
-  color: var(--fg);
-  /* Match the device's LVGL Montserrat. Google's web font is the same
-     family, so widget previews render close to the panel's pixels. */
-  font-family: 'Montserrat', ui-sans-serif, system-ui, sans-serif;
-  overflow: hidden;
-}
-
-/* label with no bind: just centered/aligned text, no box (like firmware) */
-/* Match LVGL label positioning: text anchored top-left within the
-   widget's bounding box (lv_label_set_text + lv_obj_set_pos puts the
-   box at (x,y) and renders text at the top of that box). */
-.wp-label-text {
-  display: flex;
-  align-items: flex-start;
-  font-size: 22px;
-  color: var(--fg);
-  padding: 4px;
-}
-
-/* label with bind: tile with optional caption + value.
- * Matches the firmware label layout:
- *  - caption (when present) flushed top-left in small muted text
- *  - body text centered on the remaining space when there is a caption,
- *    or centered on the whole tile when there is no caption
- */
-.wp-label-tile {
-  position: relative;
-  padding: 4px;
-}
-.wp-caption {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: normal;
-}
-.wp-value-stacked,
-.wp-value-centered {
-  position: absolute;
+/* modal (Notifications config) */
+.modal-backdrop {
+  position: fixed;
   inset: 0;
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
-  font-size: 22px;
-  font-weight: 500;
-  text-align: center;
+  z-index: 1000;
 }
-
-/* generic dark tile (toggle, bar, button) */
-.wp-tile {
-  background: #161b22;
-  border: 1px solid #30363d;
-  border-radius: 6px;
-  padding: 8px;
-  position: relative;
-}
-
-/* toggle */
-/* Toggle widget: caption left-aligned, switch right-aligned, both
-   vertically centered. Matches the firmware layout (LV_ALIGN_LEFT_MID
-   for the label, LV_ALIGN_RIGHT_MID for the switch). */
-.wp-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px;
-}
-.wp-toggle-label {
-  font-size: 18px;
+.modal {
+  background: var(--panel);
   color: var(--fg);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wp-switch {
-  position: relative;
-  width: 60px;
-  height: 30px;
-  border-radius: 15px;
-  background: #30363d;
-  flex-shrink: 0;
-}
-.wp-switch.wp-switch-on { background: var(--accent); }
-.wp-switch-knob {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #c9d1d9;
-  transition: left 0.15s;
-}
-.wp-switch-on .wp-switch-knob { left: 33px; }
-
-/* arc */
-.wp-arc {
-  width: 100%;
-  height: 100%;
-  position: relative;
-}
-.wp-arc-svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-.wp-arc-text {
-  position: absolute;
-  inset: 0;
+  border-radius: 8px;
+  padding: 20px;
+  width: 420px;
+  max-width: 90vw;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
-.wp-arc-caption {
-  font-size: 11px;
-  color: var(--muted);
+.modal h3 {
+  margin: 0;
 }
-.wp-arc-value {
-  font-size: 22px;
-  font-weight: 500;
-}
-
-/* bar */
-.wp-bar-head {
+.modal label {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 4px;
 }
-.wp-bar-value {
-  font-size: 16px;
-  color: var(--fg);
-}
-.wp-bar-track {
-  background: #30363d;
-  border-radius: 2px;
-  position: absolute;
-}
-.wp-bar-track.horizontal {
-  bottom: 8px;
-  left: 8px;
-  right: 8px;
-  height: 16px;
-}
-.wp-bar-track.vertical {
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 16px;
-  top: 28px;
-}
-.wp-bar-fill {
-  background: var(--accent);
-  border-radius: 2px;
-  height: 100%;
-}
-.wp-bar-track.vertical .wp-bar-fill {
-  position: absolute;
-  bottom: 0;
-  width: 100%;
-}
-
-/* button */
-.wp-button {
+.modal-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.wp-button-label {
-  font-size: 18px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
-.tile-kind { text-transform: uppercase; letter-spacing: 0.5px; }
-
-.tile-body {
-  flex: 1;
-  padding: 6px;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .tile-body code {
   display: block;

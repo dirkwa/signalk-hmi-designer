@@ -1,11 +1,33 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
+import {
+  DndContext,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  closestCenter,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import 'react-grid-layout/css/styles.css'
 import 'react-resizable/css/styles.css'
 
-import { WidgetPreview } from './WidgetPreview'
-import { useSkValues } from './skStream'
-import { DEFAULT_TAB_STRIP_HEIGHT, STATUS_OVERLAY_HEIGHT } from './schema'
+import { WasmCanvas } from './WasmCanvas'
+import { useNotifications, useSkValues } from './skStream'
+import {
+  DEFAULT_TAB_STRIP_HEIGHT,
+  IDLE_DIM_PRESETS,
+  IDLE_TIMEOUT_PRESETS,
+  STATUS_OVERLAY_HEIGHT,
+} from './schema'
 
 import {
   deriveDisplayDefaults,
@@ -38,6 +60,17 @@ const ROW_PX_H = ROW_HEIGHT
 const DEFAULT_DISPLAY_W = 1024
 const DEFAULT_DISPLAY_H = 600
 
+/** Every SK path a widget binds. Top-level for most kinds; the
+ *  sub-bars inside a bargroup each contribute their own path. */
+function bindsOf(w: Widget): string[] {
+  const out: string[] = []
+  if ('bind' in w && w.bind) out.push(w.bind)
+  if (w.type === 'bargroup') {
+    for (const b of w.bars) if (b.bind) out.push(b.bind)
+  }
+  return out
+}
+
 /** Returns the first `<prefix>-<n>` not already present in `existing`. */
 function freshId(prefix: string, existing: ReadonlyArray<{ id: string }>): string {
   const taken = new Set(existing.map((w) => w.id))
@@ -65,6 +98,15 @@ function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>
         type: 'label',
         display: { unit: '', scale: 1, offset: 0, decimals: 1 }
       }
+    case 'value':
+      return {
+        ...base,
+        type: 'value',
+        bind: '',
+        w: 180,
+        h: 100,
+        display: { unit: '', scale: 1, offset: 0, decimals: 1 }
+      }
     case 'toggle':
       return { ...base, type: 'toggle', bind: '' }
     case 'arc':
@@ -85,8 +127,39 @@ function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>
         max: 100,
         display: { unit: '', scale: 1, offset: 0, decimals: 0 }
       }
+    case 'bargroup':
+      return {
+        ...base,
+        type: 'bargroup',
+        w: 360,
+        h: 160,
+        bars: [
+          { label: 'A', bind: '', min: 0, max: 100 },
+          { label: 'B', bind: '', min: 0, max: 100 },
+          { label: 'C', bind: '', min: 0, max: 100 }
+        ]
+      }
     case 'button':
-      return { ...base, type: 'button', action: { put: { value: 1 } } }
+      return {
+        ...base,
+        type: 'button',
+        bind: '',
+        press_value: 1
+      }
+    case 'notifications':
+      return {
+        ...base,
+        type: 'notifications',
+        w: 480,
+        h: 320,
+        max_rows: 8,
+        columns: [
+          { label: 'PATH', field: 'path', width: 220 },
+          { label: 'STATE', field: 'state', width: 80 },
+          { label: 'MSG', field: 'message', width: 180 }
+        ],
+        row_color_field: 'state'
+      }
   }
 }
 
@@ -120,6 +193,113 @@ function applyGrid(w: Widget, g: GLLayout, colPxW: number): Widget {
   }
 }
 
+/** Free-typing number input.
+ *
+ *  type="number" silently rejects partial input like "-" or "1."
+ *  in many browsers — the field clears, you can't type a negative
+ *  without a spinner click, etc. Wrapping the value as text and
+ *  parsing-on-commit lets the user type freely (negatives, decimals,
+ *  scientific notation), only writing back to state when the input
+ *  parses cleanly. */
+function NumberField(props: {
+  value: number
+  onChange: (v: number) => void
+  title?: string
+  className?: string
+  style?: React.CSSProperties
+  min?: number
+}): JSX.Element {
+  const [draft, setDraft] = useState<string>(String(props.value))
+  // Track which canonical value the current draft corresponds to so
+  // we can detect external changes (paste, load layout) without
+  // stepping on the user's in-progress edits. When onChange commits
+  // a parsed value, we remember it here; the next render where
+  // props.value matches the lastCommittedRef means "we caused this,
+  // leave draft alone." When props.value doesn't match, it's an
+  // external write and we resync.
+  const lastCommitted = useRef<number>(props.value)
+  useEffect(() => {
+    if (props.value === lastCommitted.current) return
+    lastCommitted.current = props.value
+    setDraft(String(props.value))
+  }, [props.value])
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      className={props.className}
+      style={props.style}
+      title={props.title}
+      value={draft}
+      onChange={(e) => {
+        const txt = e.target.value
+        setDraft(txt)
+        const n = Number(txt)
+        if (txt === '' || !Number.isFinite(n)) return
+        if (props.min !== undefined && n < props.min) return
+        lastCommitted.current = n
+        props.onChange(n)
+      }}
+    />
+  )
+}
+
+/** Single tab button wired into @dnd-kit's sortable list.
+ *
+ *  The whole tab is the drag handle (touch-friendly: the user can
+ *  grab anywhere on the tab to drag it). Click activation distance
+ *  on the parent PointerSensor keeps a normal tap-to-switch from
+ *  starting a drag — only a deliberate drag move past ~5 px begins
+ *  a sort gesture.
+ *
+ *  The × close button stops propagation so a click on it never
+ *  triggers the tab switch or starts a drag. */
+function SortableTab(props: {
+  id: string
+  title: string
+  active: boolean
+  showClose: boolean
+  onActivate: () => void
+  onClose: () => void
+}): JSX.Element {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    // Bump z so the dragged tab overlays its neighbors instead of
+    // disappearing under them while in motion.
+    zIndex: isDragging ? 5 : 'auto',
+  }
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      className={`tab ${props.active ? 'active' : ''}`}
+      onClick={props.onActivate}
+      title={props.id}
+      {...attributes}
+      {...listeners}
+    >
+      {props.title || props.id}
+      {props.showClose && (
+        <span
+          className="tab-x"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onClose()
+          }}
+          title="Delete this screen"
+        >
+          ×
+        </span>
+      )}
+    </button>
+  )
+}
+
 /* ---------- the app ---------- */
 
 export function App(): JSX.Element {
@@ -137,7 +317,37 @@ export function App(): JSX.Element {
   ])
   const [activeIdx, setActiveIdx] = useState<number>(0)
   const [statusOverlay, setStatusOverlay] = useState<boolean>(true)
+  const [notifConfig, setNotifConfig] = useState<
+    Layout['notifications'] | undefined
+  >(undefined)
+  const [showNotifModal, setShowNotifModal] = useState<boolean>(false)
+  const [displayConfig, setDisplayConfig] = useState<
+    Layout['display'] | undefined
+  >(undefined)
+  const [showDisplayModal, setShowDisplayModal] = useState<boolean>(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Interim position of a currently-dragging/resizing tile. Set by
+  // RGL onDrag/onResize, cleared on stop. Read by the WASM canvas
+  // overlay so the LVGL render moves in lockstep with the chrome.
+  // Null when nothing is being dragged.
+  const [dragPreview, setDragPreview] = useState<{
+    id: string
+    grid: GLLayout
+  } | null>(null)
+  // Which bind field is currently focused. The path picker on the
+  // right routes its click to whichever target is focused:
+  //  - 'widget'    -> top-level widget bind (default, single-bind widgets)
+  //  - {barIdx: N} -> sub-bar bind inside a bargroup
+  // Reset to 'widget' whenever the selection changes.
+  const [bindTarget, setBindTarget] = useState<
+    'widget' | { barIdx: number }
+  >('widget')
+  // Reset bindTarget when the user picks a different widget so a
+  // path click after re-selection doesn't accidentally go to the
+  // last-focused sub-bar of the previous selection.
+  useEffect(() => {
+    setBindTarget('widget')
+  }, [selectedId])
 
   // The currently-active screen. Reads use this; writes use setActive().
   // Multi-screen layouts: tab strip at the bottom of canvas switches.
@@ -171,9 +381,23 @@ export function App(): JSX.Element {
     () => new Map()
   )
   const [shotUrl, setShotUrl] = useState<string | null>(null)
-  const [shotOpacity, setShotOpacity] = useState<number>(0.5)
+  const [shotOpacity, setShotOpacity] = useState<number>(1)
   const [shotErr, setShotErr] = useState<string | null>(null)
-  const [shotBusy, setShotBusy] = useState<boolean>(false)
+  // Preview backend behind the canvas. Two modes:
+  //   'wasm'   — LVGL+widget_factory compiled to WebAssembly renders
+  //              the layout into a 1024x600 <canvas> locally. Bit-
+  //              identical to the device, no device needed. Default.
+  //   'mirror' — poll the device's /screenshot?fmt=jpeg ~1 Hz; shows
+  //              real device pixels (needs a reachable device).
+  // The old SVG-approximation mode is gone — WASM gives pixel parity
+  // for free on localhost, and the visual drift between SVG and the
+  // actual device was the main reason for adding WASM in the first
+  // place.
+  const [previewMode, setPreviewMode] = useState<'mirror' | 'wasm'>('wasm')
+  const liveMirror = previewMode === 'mirror'
+  const liveShotRef = useRef<string | null>(null)
+  const [liveMirrorStatus, setLiveMirrorStatus] = useState<string>('')
+  const [wasmStatus, setWasmStatus] = useState<string>('')
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
@@ -185,54 +409,85 @@ export function App(): JSX.Element {
 
   // Restore previously-saved layout on first mount. Hydrates all
   // screens (multi-screen support); zones are pre-fetched for every
-  // bound path across every screen.
+  // bound path across every screen. Loaded layouts go through the
+  // same adoptLayout path used by Load / Import so the migration
+  // hook runs once and only once — keeps the saved-then-pushed flow
+  // consistent (no risk of pushing a pre-migration shape to a
+  // post-migration firmware).
   useEffect(() => {
     void loadSavedLayout()
       .then((saved) => {
-        if (!saved) return
-        if (saved.screens.length > 0) {
-          setScreens(saved.screens)
-          setActiveIdx(0)
-          for (const scr of saved.screens) {
-            for (const w of scr.widgets) {
-              if (!w.bind) continue
-              void fetchPathMeta(w.bind).then((meta) => {
-                if (!meta) return
-                if (meta.zones && meta.zones.length > 0) {
-                  setPathZones((prev) => {
-                    const next = new Map(prev)
-                    next.set(w.bind!, meta.zones!)
-                    return next
-                  })
-                }
-                if (meta.description) {
-                  setPathDescriptions((prev) => {
-                    const next = new Map(prev)
-                    next.set(w.bind!, meta.description!)
-                    return next
-                  })
-                }
-              })
-            }
-          }
-        }
-        if (saved.status_overlay !== undefined) {
-          setStatusOverlay(saved.status_overlay)
-        }
+        if (saved) adoptLayoutRef.current?.(saved)
       })
       .catch(() => {
         /* nothing to restore — leave the empty default */
       })
   }, [])
 
+  // Live-mirror polling. When enabled, fetch /screenshot back-to-back
+  // (no fixed interval — the device's encode + transfer time is the
+  // natural rate-limit, currently ~700 ms for a JPEG frame). We loop
+  // instead of using setInterval so we never queue overlapping
+  // requests on a slow link. The previous blob URL is revoked when
+  // a new frame lands so we don't leak browser memory at 1 fps for
+  // hours.
+  useEffect(() => {
+    if (!liveMirror) {
+      // Tearing down: free the last live frame so the next enable
+      // starts clean. Leaves shotUrl alone if it was set from the
+      // one-shot Show device button.
+      if (liveShotRef.current) {
+        URL.revokeObjectURL(liveShotRef.current)
+        liveShotRef.current = null
+      }
+      setLiveMirrorStatus('')
+      return
+    }
+    let cancelled = false
+    const loop = async () => {
+      while (!cancelled) {
+        const t0 = performance.now()
+        try {
+          const blob = await fetchScreenshot(deviceUrl)
+          const url = URL.createObjectURL(blob)
+          // Atomic swap: revoke the OLD live URL only after the new
+          // one is in state so the <img> never holds a freed URL.
+          const prev = liveShotRef.current
+          liveShotRef.current = url
+          if (!cancelled) {
+            setShotUrl(url)
+            const ms = Math.round(performance.now() - t0)
+            setLiveMirrorStatus(`${(blob.size / 1024).toFixed(0)} KB · ${ms} ms`)
+          }
+          if (prev) URL.revokeObjectURL(prev)
+        } catch (e) {
+          if (!cancelled) {
+            setLiveMirrorStatus(
+              `err: ${e instanceof Error ? e.message : String(e)}`
+            )
+            // Back off briefly on errors so we don't hammer a down
+            // device. 1 s is short enough that recovery feels instant.
+            await new Promise((r) => setTimeout(r, 1000))
+          }
+        }
+      }
+    }
+    void loop()
+    return () => {
+      cancelled = true
+    }
+  }, [liveMirror, deviceUrl])
+
   const layoutDoc: Layout = useMemo(
     () => ({
       schema: 1,
       name: 'Designer',
       status_overlay: statusOverlay,
+      ...(notifConfig ? { notifications: notifConfig } : {}),
+      ...(displayConfig ? { display: displayConfig } : {}),
       screens
     }),
-    [screens, statusOverlay]
+    [screens, statusOverlay, notifConfig, displayConfig]
   )
 
   // Canvas dimensions track the connected device's /hello.display
@@ -251,16 +506,56 @@ export function App(): JSX.Element {
     [screen.widgets, colPxW]
   )
 
+  // Effective layout for the WASM canvas: layoutDoc with the
+  // currently-dragging widget's coords overridden from dragPreview
+  // so the wasm render moves in real-time as the user drags. When
+  // nothing's being dragged, this is just layoutDoc verbatim.
+  const wasmLayoutDoc = useMemo<Layout>(() => {
+    if (!dragPreview) return layoutDoc
+    const apply = (w: Widget): Widget =>
+      w.id === dragPreview.id ? applyGrid(w, dragPreview.grid, colPxW) : w
+    return {
+      ...layoutDoc,
+      screens: layoutDoc.screens.map((s, i) =>
+        i === activeIdx ? { ...s, widgets: s.widgets.map(apply) } : s
+      ),
+    }
+  }, [layoutDoc, dragPreview, activeIdx, colPxW])
+
   // Live SK values for any bound widget. The hook re-subscribes when
-  // the set of bound paths changes.
+  // the set of bound paths changes. Includes top-level widget binds
+  // AND sub-bar binds inside bargroup widgets so per-bar tinting and
+  // value display work in the canvas preview.
   const boundPaths = useMemo(
-    () =>
-      screens
-        .flatMap((s) => s.widgets.map((w) => w.bind ?? ''))
-        .filter((p): p is string => p.length > 0),
+    () => screens.flatMap((s) => s.widgets.flatMap(bindsOf)),
     [screens]
   )
   const skValues = useSkValues(boundPaths)
+
+  // Notifications widgets are fed by polling SK's notifications.*
+  // tree. Only poll if a layout actually uses a notifications widget
+  // anywhere (don't hammer SK otherwise). If any widget asks for
+  // include_cleared, widen the poll to cover cleared rows; the
+  // wasm-side notifications registry filters per-widget when it
+  // renders.
+  const wantsNotifications = useMemo(
+    () =>
+      screens.some((s) =>
+        s.widgets.some((w) => w.type === 'notifications')
+      ),
+    [screens]
+  )
+  const wantsCleared = useMemo(
+    () =>
+      screens.some((s) =>
+        s.widgets.some(
+          (w) =>
+            w.type === 'notifications' && w.include_cleared === true
+        )
+      ),
+    [screens]
+  )
+  const notifications = useNotifications(wantsNotifications, wantsCleared)
   const selected = screen.widgets.find((w) => w.id === selectedId) ?? null
 
   const filteredPaths = useMemo(() => {
@@ -280,6 +575,7 @@ export function App(): JSX.Element {
     _oldItem: GLLayout,
     newItem: GLLayout
   ): void => {
+    setDragPreview(null)
     setScreen((prev) => ({
       ...prev,
       widgets: prev.widgets.map((w) =>
@@ -288,6 +584,22 @@ export function App(): JSX.Element {
     }))
   }
   const onResizeStop = onDragStop
+  // During a drag/resize, RGL gives us interim positions on every
+  // tick. We hold the interim shape in `dragPreview` (NOT in the
+  // canonical screens state, which would grid-quantize the pixel
+  // positions and drift widgets over time per the onDragStop
+  // comment above). The wasm canvas reads from dragPreview when
+  // set, falling back to the canonical layout otherwise — so
+  // WASM mode shows the widget moving in real LVGL as you drag,
+  // while SVG mode (which already updates from screens state)
+  // sees no behaviour change.
+  const onDragOrResize = (
+    _layout: GLLayout[],
+    _oldItem: GLLayout,
+    newItem: GLLayout
+  ): void => {
+    setDragPreview({ id: newItem.i, grid: newItem })
+  }
 
   /* ---- screen management ---- */
 
@@ -322,6 +634,41 @@ export function App(): JSX.Element {
     setSelectedId(null)
   }
 
+  // Reorder screens after a tab drag. Keeps the active screen
+  // active (its index follows along with the move) so the canvas
+  // doesn't visibly switch tabs when the user only meant to reorder.
+  const reorderScreens = (fromIdx: number, toIdx: number): void => {
+    if (fromIdx === toIdx) return
+    setScreens((prev) => arrayMove(prev, fromIdx, toIdx))
+    setActiveIdx((cur) => {
+      if (cur === fromIdx) return toIdx
+      // Active was between from and to; shift by one in the right
+      // direction since the dragged tab passed over it.
+      if (fromIdx < toIdx && cur > fromIdx && cur <= toIdx) return cur - 1
+      if (fromIdx > toIdx && cur < fromIdx && cur >= toIdx) return cur + 1
+      return cur
+    })
+  }
+
+  // Pointer + keyboard sensors. The 5 px activation distance lets a
+  // normal tap-to-switch through; a deliberate drag past that starts
+  // a sort. Keyboard works via Tab to focus + Space to pick up +
+  // arrow keys to move.
+  const sortSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
+  const onTabDragEnd = (e: DragEndEvent): void => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const fromIdx = screens.findIndex((s) => s.id === active.id)
+    const toIdx = screens.findIndex((s) => s.id === over.id)
+    if (fromIdx === -1 || toIdx === -1) return
+    reorderScreens(fromIdx, toIdx)
+  }
+
   const renameScreen = (idx: number, title: string): void => {
     setScreens((prev) => {
       const cur = prev[idx]
@@ -353,6 +700,10 @@ export function App(): JSX.Element {
   /* ---- copy/paste clipboard (in-memory, session-scoped) ---- */
   const clipboardRef = useRef<Widget | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // Forward-ref so the boot-restore effect (declared above
+  // adoptLayout for ordering reasons) can route through the same
+  // migration + state-hydration path as Load / Import.
+  const adoptLayoutRef = useRef<((l: Layout) => void) | null>(null)
 
   const copySelected = (): void => {
     const w = screen.widgets.find((x) => x.id === selectedId)
@@ -451,6 +802,7 @@ export function App(): JSX.Element {
           // Only widgets that have a display block get prefilled.
           if (
             w.type !== 'label' &&
+            w.type !== 'value' &&
             w.type !== 'arc' &&
             w.type !== 'bar' &&
             w.type !== 'button'
@@ -485,64 +837,161 @@ export function App(): JSX.Element {
     }
   }
 
-  const onTakeScreenshot = async (): Promise<void> => {
-    setShotErr(null)
-    setShotBusy(true)
-    try {
-      const blob = await fetchScreenshot(deviceUrl)
-      // Replace the previous blob URL (free its memory).
-      if (shotUrl) URL.revokeObjectURL(shotUrl)
-      setShotUrl(URL.createObjectURL(blob))
-    } catch (e) {
-      setShotErr(e instanceof Error ? e.message : String(e))
-    } finally {
-      setShotBusy(false)
-    }
-  }
-
-  const onHideScreenshot = (): void => {
-    if (shotUrl) URL.revokeObjectURL(shotUrl)
-    setShotUrl(null)
-    setShotErr(null)
-  }
-
   /* ---- file ops: save / load / export / import / clear ---- */
 
   const [fileMsg, setFileMsg] = useState<string | null>(null)
 
+  /** One-shot migration for layouts saved under v0.1 schema:
+   *
+   *  - button widgets with `action: {put: {value, path?}}` are
+   *    rewritten to `{bind: path ?? bind, press_value: value}`.
+   *  - `list` widgets whose only data source was `bind: "notifications"`
+   *    are renamed to `notifications` (the dedicated kind). The
+   *    `bind` field is dropped (notifications is always the source).
+   *    Any `list` with a different bind is left as-is so a future
+   *    generic-table widget can reclaim that kind without a
+   *    silent rewrite.
+   *
+   *  Non-button, non-list widgets pass through.
+   */
+  const migrateLayout = (l: Layout): Layout => {
+    return {
+      ...l,
+      screens: l.screens.map((s) => ({
+        ...s,
+        widgets: s.widgets.map((w) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const legacy = w as any
+          if (
+            legacy.type === 'list' &&
+            (legacy.bind === 'notifications' || legacy.bind === undefined)
+          ) {
+            const { type: _t, bind: _b, ...rest } = legacy
+            void _t
+            void _b
+            return { ...rest, type: 'notifications' } as Widget
+          }
+          if (w.type !== 'button') return w
+          if (legacy.action?.put && legacy.press_value === undefined) {
+            const { action: _drop, ...rest } = legacy
+            void _drop
+            return {
+              ...rest,
+              bind: legacy.action.put.path ?? w.bind ?? '',
+              press_value: legacy.action.put.value
+            } as Widget
+          }
+          return w
+        })
+      }))
+    }
+  }
+
   // Replaces the entire designer state (screens + statusOverlay) with
   // a loaded Layout. Also re-fetches zones for every bound path so
   // colors appear immediately.
-  const adoptLayout = (l: Layout): void => {
+  const adoptLayout = (raw: Layout): void => {
+    const l = migrateLayout(raw)
     setScreens(l.screens.length > 0 ? l.screens : [
       { id: 'main', title: 'Main', widgets: [] }
     ])
     setActiveIdx(0)
     setSelectedId(null)
     if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
+    if (l.notifications !== undefined) setNotifConfig(l.notifications)
+    if (l.display !== undefined) setDisplayConfig(l.display)
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
-        if (!w.bind) continue
-        void fetchPathMeta(w.bind).then((meta) => {
-          if (!meta) return
-          if (meta.zones && meta.zones.length > 0) {
-            setPathZones((prev) => {
-              const next = new Map(prev)
-              next.set(w.bind!, meta.zones!)
-              return next
-            })
-          }
-          if (meta.description) {
-            setPathDescriptions((prev) => {
-              const next = new Map(prev)
-              next.set(w.bind!, meta.description!)
-              return next
-            })
-          }
-        })
+        for (const p of bindsOf(w)) {
+          // Capture the widget id + (for bargroup) sub-bar bind so
+          // the async meta resolution can route the displayUnits
+          // prefill back to the right slot without re-traversing
+          // the layout.
+          const widId = w.id
+          void fetchPathMeta(p).then((meta) => {
+            if (!meta) return
+            if (meta.zones && meta.zones.length > 0) {
+              setPathZones((prev) => {
+                const next = new Map(prev)
+                next.set(p, meta.zones!)
+                return next
+              })
+            }
+            if (meta.description) {
+              setPathDescriptions((prev) => {
+                const next = new Map(prev)
+                next.set(p, meta.description!)
+                return next
+              })
+            }
+            // Retroactive displayUnits prefill: existing layouts
+            // (saved before the prefill code was added, or saved
+            // before the user set unitsPreferences in SK) have raw
+            // values and no `display` block. Patch those in here
+            // without overwriting user-edited fields.
+            const d = deriveDisplayDefaults(meta)
+            if (!d) return
+            setScreens((prev) =>
+              prev.map((s) => ({
+                ...s,
+                widgets: s.widgets.map((wid) => {
+                  if (wid.id !== widId) return wid
+                  if (wid.type === 'bargroup') {
+                    const bars2 = wid.bars.map((b) => {
+                      if (b.bind !== p) return b
+                      const cur = b.display ?? {}
+                      return {
+                        ...b,
+                        display: {
+                          unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                          scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                          offset:
+                            cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                          decimals:
+                            cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
+                        },
+                      }
+                    })
+                    return { ...wid, bars: bars2 }
+                  }
+                  if (
+                    wid.type !== 'label' &&
+                    wid.type !== 'value' &&
+                    wid.type !== 'arc' &&
+                    wid.type !== 'bar' &&
+                    wid.type !== 'button'
+                  ) {
+                    return wid
+                  }
+                  // Only fill for the widget whose bind matches the
+                  // path we just fetched meta for — a widget can have
+                  // a bind set without it matching `p` if user
+                  // changed it before the fetch resolved.
+                  if ((wid as { bind?: string }).bind !== p) return wid
+                  const cur = wid.display ?? {}
+                  return {
+                    ...wid,
+                    display: {
+                      unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                      scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                      offset:
+                        cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                      decimals:
+                        cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
+                    },
+                  } as Widget
+                }),
+              }))
+            )
+          })
+        }
       }
     }
   }
+  // Expose adoptLayout to the boot-restore effect via the ref. The
+  // effect can't call adoptLayout directly because it's declared
+  // above this point; the ref bridges the ordering.
+  adoptLayoutRef.current = adoptLayout
 
   const onSave = async (): Promise<void> => {
     setFileMsg(null)
@@ -632,14 +1081,27 @@ export function App(): JSX.Element {
   }
 
   const availableKinds = useMemo<WidgetKind[]>(() => {
-    if (!hello) return ['label', 'toggle', 'arc', 'bar', 'button']
+    if (!hello)
+      return [
+        'label',
+        'value',
+        'toggle',
+        'arc',
+        'bar',
+        'bargroup',
+        'button',
+        'notifications'
+      ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
         k === 'label' ||
+        k === 'value' ||
         k === 'toggle' ||
         k === 'arc' ||
         k === 'bar' ||
-        k === 'button'
+        k === 'bargroup' ||
+        k === 'button' ||
+        k === 'notifications'
     )
   }, [hello])
 
@@ -680,15 +1142,55 @@ export function App(): JSX.Element {
             />
             status bar
           </label>
-          <button
-            onClick={() =>
-              shotUrl ? onHideScreenshot() : void onTakeScreenshot()
-            }
-            disabled={shotBusy}
-            title="Fetch the device's current screen and overlay it on the canvas"
+          {/* Preview backend. WASM (default) renders the layout via
+              the firmware's widget_factory compiled to wasm. Mirror
+              polls the device's /screenshot.jpeg for the real
+              panel pixels. */}
+          <div
+            className="topbar-toggle"
+            role="group"
+            title="Canvas preview backend"
+            style={{ gap: 4 }}
           >
-            {shotBusy ? '…' : shotUrl ? 'Hide device' : 'Show device'}
-          </button>
+            <button
+              onClick={() => {
+                setPreviewMode('wasm')
+                // Mirror leaves an <img> overlay at full opacity; if we
+                // don't tear it down on the switch back to WASM, the
+                // last-fetched JPEG sits on top of the LVGL canvas and
+                // pretends to be the live render.
+                if (shotUrl) {
+                  URL.revokeObjectURL(shotUrl)
+                  setShotUrl(null)
+                }
+              }}
+              className={previewMode === 'wasm' ? 'primary' : ''}
+              title="LVGL + widget_factory compiled to WebAssembly. Pixel-perfect, works offline; ~1.3 MB bundle (lazy-loaded)."
+            >
+              WASM
+            </button>
+            <button
+              onClick={() => {
+                setPreviewMode('mirror')
+                setShotErr(null)
+                setShotOpacity(1)
+              }}
+              className={previewMode === 'mirror' ? 'primary' : ''}
+              title="Continuously poll the device for /screenshot.jpeg so the canvas shows real device pixels (needs a reachable device)"
+            >
+              Mirror
+            </button>
+          </div>
+          {previewMode === 'mirror' && liveMirrorStatus && (
+            <span className="muted" style={{ fontSize: 11 }}>
+              {liveMirrorStatus}
+            </span>
+          )}
+          {previewMode === 'wasm' && wasmStatus && (
+            <span className="muted" style={{ fontSize: 11 }}>
+              {wasmStatus}
+            </span>
+          )}
           {shotUrl && (
             <label
               className="topbar-toggle"
@@ -763,8 +1265,162 @@ export function App(): JSX.Element {
           >
             Clear
           </button>
+          <button
+            onClick={() => setShowNotifModal(true)}
+            title="Configure the device alert overlay"
+          >
+            Notifications
+          </button>
+          {hello?.display?.idle_timeout && (
+            <button
+              onClick={() => setShowDisplayModal(true)}
+              title="Backlight power-save (idle timeout)"
+            >
+              Display
+            </button>
+          )}
         </div>
       </header>
+
+      {showNotifModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowNotifModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Alert overlay</h3>
+            <p className="muted small">
+              Layout-level setting. The device pops a full-screen modal
+              above the active screen whenever SK publishes a
+              notification with state &gt;= min state. Tapping ACK on
+              the device PUTs <code>state: "normal"</code> to the
+              notification path. Defaults: enabled, alarm.
+            </p>
+            <label>
+              <input
+                type="checkbox"
+                checked={notifConfig?.enabled ?? true}
+                onChange={(e) =>
+                  setNotifConfig({
+                    enabled: e.target.checked,
+                    min_state: notifConfig?.min_state ?? 'alarm',
+                    ack_method: 'modal'
+                  })
+                }
+              />
+              enabled
+            </label>
+            <label>
+              min state
+              <select
+                value={notifConfig?.min_state ?? 'alarm'}
+                onChange={(e) =>
+                  setNotifConfig({
+                    enabled: notifConfig?.enabled ?? true,
+                    min_state: e.target.value as NonNullable<
+                      Layout['notifications']
+                    >['min_state'],
+                    ack_method: 'modal'
+                  })
+                }
+              >
+                <option value="alert">alert</option>
+                <option value="warn">warn</option>
+                <option value="alarm">alarm</option>
+                <option value="emergency">emergency</option>
+              </select>
+            </label>
+            <label>
+              ack method
+              <select value="modal" disabled>
+                <option value="modal">modal</option>
+              </select>
+            </label>
+            <div className="modal-actions">
+              <button
+                className="ghost"
+                onClick={() => {
+                  setNotifConfig(undefined)
+                  setShowNotifModal(false)
+                }}
+                title="Drop the notifications block (firmware defaults apply)"
+              >
+                clear
+              </button>
+              <button onClick={() => setShowNotifModal(false)}>done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDisplayModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowDisplayModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Display</h3>
+            <p className="muted small">
+              Backlight power save. After the chosen idle interval the
+              panel dims to the chosen brightness. Any touch, incoming
+              notification (≥ min state), or a fresh layout push wakes
+              it and re-arms the timer.
+            </p>
+            <label>
+              idle timeout
+              <select
+                value={displayConfig?.idle_timeout_sec ?? 0}
+                onChange={(e) => {
+                  const sec = parseInt(e.target.value, 10)
+                  if (sec === 0) {
+                    setDisplayConfig(undefined)
+                  } else {
+                    setDisplayConfig({
+                      idle_timeout_sec: sec,
+                      idle_dim_pct: displayConfig?.idle_dim_pct ?? 0,
+                    })
+                  }
+                }}
+              >
+                {IDLE_TIMEOUT_PRESETS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              idle brightness
+              <select
+                value={displayConfig?.idle_dim_pct ?? 0}
+                disabled={!displayConfig?.idle_timeout_sec}
+                onChange={(e) => {
+                  const pct = parseInt(e.target.value, 10)
+                  setDisplayConfig({
+                    idle_timeout_sec: displayConfig?.idle_timeout_sec ?? 0,
+                    idle_dim_pct: pct,
+                  })
+                }}
+              >
+                {IDLE_DIM_PRESETS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted small">
+              While dimmed the device shows a "TAP TO WAKE" overlay
+              that consumes the first wake-tap, so no toggle or button
+              underneath fires by accident. Tap-wake works at every
+              brightness level — including 0% (fully off).
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setShowDisplayModal(false)}>done</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="cols">
         {/* ---- left column: palette + selected props ---- */}
@@ -799,6 +1455,7 @@ export function App(): JSX.Element {
                 bind (SK path)
                 <input
                   value={selected.bind ?? ''}
+                  onFocus={() => setBindTarget('widget')}
                   onChange={(e) => applyBind(selected.id, e.target.value)}
                 />
               </label>
@@ -830,7 +1487,398 @@ export function App(): JSX.Element {
                   </label>
                 </>
               )}
+              {selected.type === 'arc' && (
+                <>
+                  <label>
+                    ticks
+                    <input
+                      type="number"
+                      min={0}
+                      value={selected.ticks ?? 0}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          ticks: Number(e.target.value) || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    tick labels
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selected.tick_labels)}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          tick_labels: e.target.checked || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <fieldset className="bands">
+                    <legend>bands</legend>
+                    {(selected.bands ?? []).map((b, i) => (
+                      <div className="band-row" key={i}>
+                        <input
+                          type="number"
+                          value={b.from}
+                          title="from"
+                          onChange={(e) => {
+                            const next = [...(selected.bands ?? [])]
+                            next[i] = { ...b, from: Number(e.target.value) }
+                            updateWidget(selected.id, { bands: next })
+                          }}
+                        />
+                        <input
+                          type="number"
+                          value={b.to}
+                          title="to"
+                          onChange={(e) => {
+                            const next = [...(selected.bands ?? [])]
+                            next[i] = { ...b, to: Number(e.target.value) }
+                            updateWidget(selected.id, { bands: next })
+                          }}
+                        />
+                        <input
+                          type="color"
+                          value={b.color}
+                          onChange={(e) => {
+                            const next = [...(selected.bands ?? [])]
+                            next[i] = { ...b, color: e.target.value }
+                            updateWidget(selected.id, { bands: next })
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            const next = (selected.bands ?? []).filter(
+                              (_, j) => j !== i
+                            )
+                            updateWidget(selected.id, {
+                              bands: next.length ? next : undefined
+                            })
+                          }}
+                          title="Remove band"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        const cur = selected.bands ?? []
+                        // Suggest a band spanning the upper third of
+                        // the range — useful "warn zone" default.
+                        const span = selected.max - selected.min
+                        const next = [
+                          ...cur,
+                          {
+                            from: selected.min + span * 0.7,
+                            to: selected.max,
+                            color: '#d29922'
+                          }
+                        ]
+                        updateWidget(selected.id, { bands: next })
+                      }}
+                    >
+                      + add band
+                    </button>
+                  </fieldset>
+                </>
+              )}
+              {selected.type === 'bargroup' && (
+                <>
+                  <fieldset className="bands">
+                    <legend>bars</legend>
+                    {selected.bars.map((b, i) => (
+                      <div className="band-row" key={i}>
+                        <input
+                          value={b.label}
+                          title="label"
+                          onChange={(e) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, label: e.target.value }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <input
+                          value={b.bind}
+                          placeholder="signalk.path"
+                          title="bind (click in here, then click a path on the right)"
+                          onFocus={() => setBindTarget({ barIdx: i })}
+                          onChange={(e) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, bind: e.target.value }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <NumberField
+                          value={b.min}
+                          title="min (negatives + decimals allowed)"
+                          onChange={(n) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, min: n }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <NumberField
+                          value={b.max}
+                          title="max (negatives + decimals allowed)"
+                          onChange={(n) => {
+                            const next = [...selected.bars]
+                            next[i] = { ...b, max: n }
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            const next = selected.bars.filter(
+                              (_, j) => j !== i
+                            )
+                            // Keep at least one bar; refuse to drop the last.
+                            if (next.length === 0) return
+                            updateWidget(selected.id, { bars: next })
+                          }}
+                          title="Remove bar"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={(e) => {
+                        const next = [
+                          ...selected.bars,
+                          { label: '', bind: '', min: 0, max: 100 }
+                        ]
+                        updateWidget(selected.id, { bars: next })
+                        // Bring the freshly-added row into view —
+                        // without this the inspector's overflow-y
+                        // hides the new bar at the bottom and the
+                        // click feels like a no-op.
+                        requestAnimationFrame(() => {
+                          const btn = e.currentTarget as HTMLButtonElement | null
+                          btn?.scrollIntoView({
+                            block: 'nearest',
+                            behavior: 'smooth',
+                          })
+                        })
+                      }}
+                    >
+                      + add bar
+                    </button>
+                  </fieldset>
+                </>
+              )}
+              {selected.type === 'notifications' && (
+                <>
+                  <label>
+                    max rows
+                    <input
+                      type="number"
+                      min={1}
+                      value={selected.max_rows ?? 8}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          max_rows: Math.max(1, Number(e.target.value))
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    row height
+                    <input
+                      type="number"
+                      min={16}
+                      value={selected.row_height ?? 28}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          row_height: Math.max(16, Number(e.target.value))
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    row color field
+                    <input
+                      value={selected.row_color_field ?? ''}
+                      placeholder="state"
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          row_color_field: e.target.value || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={selected.include_cleared === true}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          include_cleared: e.target.checked || undefined
+                        })
+                      }
+                    />
+                    include cleared (normal / nominal)
+                  </label>
+                  <fieldset className="bands">
+                    <legend>columns</legend>
+                    {selected.columns.map((c, i) => (
+                      <div className="band-row" key={i}>
+                        <input
+                          value={c.label}
+                          title="header"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, label: e.target.value }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <input
+                          value={c.field}
+                          title="field (dotted path)"
+                          placeholder="path"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, field: e.target.value }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <input
+                          type="number"
+                          value={c.width ?? 100}
+                          title="width px"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, width: Number(e.target.value) }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <input
+                          value={c.format ?? ''}
+                          title="format"
+                          placeholder="%s"
+                          onChange={(e) => {
+                            const next = [...selected.columns]
+                            next[i] = { ...c, format: e.target.value || undefined }
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={() => {
+                            const next = selected.columns.filter(
+                              (_, j) => j !== i
+                            )
+                            if (next.length === 0) return
+                            updateWidget(selected.id, { columns: next })
+                          }}
+                          title="Remove column"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        const next = [
+                          ...selected.columns,
+                          { label: '', field: '', width: 100 }
+                        ]
+                        updateWidget(selected.id, { columns: next })
+                      }}
+                    >
+                      + add column
+                    </button>
+                  </fieldset>
+                </>
+              )}
+              {selected.type === 'button' && (
+                <>
+                  <label>
+                    press value
+                    <input
+                      value={String(selected.press_value ?? '')}
+                      onChange={(e) => {
+                        const t = e.target.value
+                        const n = Number(t)
+                        const v: boolean | number | string =
+                          t === 'true'
+                            ? true
+                            : t === 'false'
+                              ? false
+                              : !isNaN(n) && t !== ''
+                                ? n
+                                : t
+                        updateWidget(selected.id, { press_value: v })
+                      }}
+                    />
+                  </label>
+                  <label>
+                    release value
+                    <input
+                      value={
+                        selected.release_value === undefined
+                          ? ''
+                          : String(selected.release_value)
+                      }
+                      placeholder="(no release PUT)"
+                      onChange={(e) => {
+                        const t = e.target.value
+                        if (t === '') {
+                          updateWidget(selected.id, {
+                            release_value: undefined
+                          })
+                          return
+                        }
+                        const n = Number(t)
+                        const v: boolean | number | string =
+                          t === 'true'
+                            ? true
+                            : t === 'false'
+                              ? false
+                              : !isNaN(n)
+                                ? n
+                                : t
+                        updateWidget(selected.id, { release_value: v })
+                      }}
+                    />
+                  </label>
+                  <label>
+                    hold ms
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={selected.hold_ms ?? 0}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        updateWidget(selected.id, {
+                          hold_ms: n > 0 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <div className="muted small">
+                    With release_value set, this is a momentary button
+                    (PUT on press, PUT on release). Without, it's a
+                    one-shot action. hold_ms requires sustained press
+                    before any PUT fires — safety latch for STOP, etc.
+                  </div>
+                </>
+              )}
               {(selected.type === 'label' ||
+                selected.type === 'value' ||
                 selected.type === 'arc' ||
                 selected.type === 'bar') && (
                 <>
@@ -897,6 +1945,83 @@ export function App(): JSX.Element {
                   </label>
                 </>
               )}
+              {/* Font size — applies to widgets whose primary text
+                  is configurable (label, value, toggle caption).
+                  Stand-alone so it works even for toggle, which
+                  has no unit/scale/offset/decimals block above. */}
+              {(selected.type === 'label' ||
+                selected.type === 'value' ||
+                selected.type === 'toggle') && (
+                <label>
+                  font size
+                  <select
+                    value={selected.display?.font_size ?? 0}
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      updateWidget(selected.id, {
+                        display: {
+                          ...(selected.display ?? {}),
+                          font_size: v > 0 ? v : undefined
+                        }
+                      })
+                    }}
+                    title="LVGL renders fixed bitmap fonts; firmware snaps to the closest compiled size at or below this value."
+                  >
+                    <option value={0}>auto (default)</option>
+                    <option value={14}>14 px</option>
+                    <option value={16}>16 px</option>
+                    <option value={20}>20 px</option>
+                    <option value={28}>28 px</option>
+                    <option value={36}>36 px</option>
+                  </select>
+                </label>
+              )}
+              {/* ---- Colors (applicable to every widget kind) ---- */}
+              <div className="hr" />
+              <label>
+                bg color
+                <input
+                  type="color"
+                  value={selected.bg_color ?? '#161b22'}
+                  onChange={(e) =>
+                    updateWidget(selected.id, { bg_color: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    updateWidget(selected.id, { bg_color: undefined })
+                  }
+                  title="Clear bg color override (use theme default)"
+                >
+                  clear
+                </button>
+              </label>
+              <label>
+                fg color
+                <input
+                  type="color"
+                  value={selected.fg_color ?? '#e6edf3'}
+                  onChange={(e) =>
+                    updateWidget(selected.id, { fg_color: e.target.value })
+                  }
+                />
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() =>
+                    updateWidget(selected.id, { fg_color: undefined })
+                  }
+                  title="Clear fg color override (use theme default)"
+                >
+                  clear
+                </button>
+              </label>
+              <div className="muted small">
+                Zone state colors always win when the bound path has a
+                matching zone — these are fallbacks.
+              </div>
             </div>
           )}
         </aside>
@@ -948,6 +2073,29 @@ export function App(): JSX.Element {
                 }}
               />
             )}
+            {/* WASM preview: full-canvas LVGL render, sits beneath
+                widget tile chrome so the user can still drag and
+                resize over it. Note SDL captures pointer events on
+                the canvas itself; we pointer-events: none in
+                WasmCanvas so RGL drag handles still receive
+                clicks. */}
+            {/* Always mount the wasm canvas so emscripten SDL stays
+                bound to the same DOM element for the whole session.
+                Hide it when another preview mode is active — toggling
+                back to WASM then just flips display:block, no
+                remount, no rebuild. */}
+            <WasmCanvas
+              layout={wasmLayoutDoc}
+              activeIdx={activeIdx}
+              displayW={displayW}
+              displayH={displayH}
+              pathZones={pathZones}
+              pathDescriptions={pathDescriptions}
+              skValues={skValues}
+              notifications={notifications}
+              visible={previewMode === 'wasm'}
+              onStatus={setWasmStatus}
+            />
             <div
               className="canvas-content"
               style={{
@@ -993,6 +2141,8 @@ export function App(): JSX.Element {
               // selected widgets), so unselected widgets behave as
               // pure click targets.
               draggableHandle=".chrome"
+              onDrag={onDragOrResize}
+              onResize={onDragOrResize}
               onDragStop={onDragStop}
               onResizeStop={onResizeStop}
             >
@@ -1022,14 +2172,11 @@ export function App(): JSX.Element {
                         </button>
                       </div>
                     )}
-                    <WidgetPreview
-                      w={w}
-                      value={w.bind ? skValues.get(w.bind) : undefined}
-                      zones={w.bind ? pathZones.get(w.bind) : undefined}
-                      description={
-                        w.bind ? pathDescriptions.get(w.bind) : undefined
-                      }
-                    />
+                    {/* No per-tile preview render. The wasm canvas
+                        and the device-mirror overlay both paint the
+                        full widget surface elsewhere; the tile
+                        itself is just a click + drag target with
+                        chrome on selection. */}
                   </div>
                 )
               })}
@@ -1041,34 +2188,34 @@ export function App(): JSX.Element {
                 style={{ height: `${tabStripHeight}px` }}
                 onClick={(e) => e.stopPropagation()}
               >
-                {screens.map((s, i) => (
-                  <button
-                    key={s.id}
-                    className={`tab ${i === activeIdx ? 'active' : ''}`}
-                    onClick={() => {
-                      setActiveIdx(i)
-                      setSelectedId(null)
-                    }}
-                    title={s.id}
+                <DndContext
+                  sensors={sortSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={onTabDragEnd}
+                >
+                  <SortableContext
+                    items={screens.map((s) => s.id)}
+                    strategy={horizontalListSortingStrategy}
                   >
-                    {s.title || s.id}
-                    {screens.length > 1 && i === activeIdx && (
-                      <span
-                        className="tab-x"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (
-                            confirm(`Delete screen "${s.title}"?`)
-                          )
+                    {screens.map((s, i) => (
+                      <SortableTab
+                        key={s.id}
+                        id={s.id}
+                        title={s.title || s.id}
+                        active={i === activeIdx}
+                        showClose={screens.length > 1 && i === activeIdx}
+                        onActivate={() => {
+                          setActiveIdx(i)
+                          setSelectedId(null)
+                        }}
+                        onClose={() => {
+                          if (confirm(`Delete screen "${s.title}"?`))
                             removeScreen(i)
                         }}
-                        title="Delete this screen"
-                      >
-                        ×
-                      </span>
-                    )}
-                  </button>
-                ))}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
           </div>
@@ -1095,9 +2242,79 @@ export function App(): JSX.Element {
               <li
                 key={p}
                 onClick={() => {
-                  if (selected) applyBind(selected.id, p)
+                  if (!selected) return
+                  // Route the click to whichever bind input the
+                  // user last focused: widget-level for most kinds,
+                  // a specific sub-bar inside a bargroup.
+                  if (
+                    bindTarget !== 'widget' &&
+                    selected.type === 'bargroup'
+                  ) {
+                    const i = bindTarget.barIdx
+                    const target = selected.bars[i]
+                    if (target) {
+                      const next = [...selected.bars]
+                      next[i] = { ...target, bind: p }
+                      updateWidget(selected.id, { bars: next })
+                      // Pre-fetch meta so zone tinting + description
+                      // are live for the sub-bar's bound path too.
+                      // Also auto-fill the sub-bar's display block
+                      // from SK displayUnits — same conversion the
+                      // widget-level bind picker does for label/arc/
+                      // bar/button. Only fills empty/default fields,
+                      // never overwrites a user-set value.
+                      void fetchPathMeta(p).then((meta) => {
+                        if (!meta) return
+                        if (meta.zones && meta.zones.length > 0) {
+                          setPathZones((prev) => {
+                            const nextMap = new Map(prev)
+                            nextMap.set(p, meta.zones!)
+                            return nextMap
+                          })
+                        }
+                        if (meta.description) {
+                          setPathDescriptions((prev) => {
+                            const nextMap = new Map(prev)
+                            nextMap.set(p, meta.description!)
+                            return nextMap
+                          })
+                        }
+                        const d = deriveDisplayDefaults(meta)
+                        if (!d) return
+                        setScreen((prev) => ({
+                          ...prev,
+                          widgets: prev.widgets.map((wid) => {
+                            if (wid.id !== selected.id) return wid
+                            if (wid.type !== 'bargroup') return wid
+                            const bars2 = wid.bars.map((b, j) => {
+                              if (j !== i) return b
+                              const cur = b.display ?? {}
+                              return {
+                                ...b,
+                                display: {
+                                  unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                                  scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                                  offset:
+                                    cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                                  decimals:
+                                    cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
+                                },
+                              }
+                            })
+                            return { ...wid, bars: bars2 }
+                          }),
+                        }))
+                      })
+                      return
+                    }
+                  }
+                  applyBind(selected.id, p)
                 }}
-                title="click to bind to selected widget"
+                title={
+                  bindTarget !== 'widget' && selected?.type === 'bargroup'
+                    ? `click to bind to sub-bar #${bindTarget.barIdx + 1}`
+                    : 'click to bind to selected widget'
+                }
               >
                 {p}
               </li>
