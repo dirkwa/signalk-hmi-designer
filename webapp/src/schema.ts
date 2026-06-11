@@ -244,10 +244,11 @@ export interface LayoutDisplayConfig {
    *  any incoming notification, and a fresh layout push all re-arm
    *  the timer back to the full window. */
   idle_timeout_sec?: number
-  /** Backlight brightness percentage (0-100) when idle. Default 20.
+  /** Backlight brightness percentage (0-100) when idle. Default 80.
    *  On the Waveshare 7B the GT911 touch controller only detects
-   *  taps when the backlight is >= ~20%, so values below that
-   *  disable tap-to-wake (notifications still wake the screen). */
+   *  taps reliably very close to full brightness, so dim levels
+   *  below ~80% disable tap-to-wake (notifications still wake the
+   *  screen). */
   idle_dim_pct?: number
 }
 
@@ -268,19 +269,22 @@ export const IDLE_TIMEOUT_PRESETS: ReadonlyArray<{
 ]
 
 /** Idle-brightness presets surfaced in the designer's Display modal.
- *  20% is the firmware default (lowest level at which the Waveshare
- *  7B touchscreen still detects taps). Lower values darken further
- *  but disable tap-to-wake (notifications still wake regardless). */
+ *
+ *  The Waveshare 7B's GT911 touchscreen only detects taps reliably
+ *  very close to full brightness — the LCD's sync signals desensitize
+ *  the touch grid as soon as the backlight dims. 80% is therefore the
+ *  default: visibly "asleep" but still tap-wakable. Lower values save
+ *  more power but disable tap-wake (notifications still wake the
+ *  panel regardless). */
 export const IDLE_DIM_PRESETS: ReadonlyArray<{
   value: number
   label: string
 }> = [
   { value: 0, label: 'Off (notifications only)' },
-  { value: 5, label: '5% (very dark, no tap-wake)' },
-  { value: 10, label: '10% (dark, no tap-wake)' },
-  { value: 20, label: '20% (default, tap-wake works)' },
-  { value: 30, label: '30%' },
-  { value: 50, label: '50%' },
+  { value: 20, label: '20% (dark, notifications only)' },
+  { value: 50, label: '50% (medium, notifications only)' },
+  { value: 80, label: '80% (default, tap-wake works)' },
+  { value: 90, label: '90% (slight dim, tap-wake)' },
 ]
 
 /** Height in device pixels of the status overlay strip (matches the

@@ -1377,7 +1377,7 @@ export function App(): JSX.Element {
                   } else {
                     setDisplayConfig({
                       idle_timeout_sec: sec,
-                      idle_dim_pct: displayConfig?.idle_dim_pct ?? 20,
+                      idle_dim_pct: displayConfig?.idle_dim_pct ?? 80,
                     })
                   }
                 }}
@@ -1392,7 +1392,7 @@ export function App(): JSX.Element {
             <label>
               idle brightness
               <select
-                value={displayConfig?.idle_dim_pct ?? 20}
+                value={displayConfig?.idle_dim_pct ?? 80}
                 disabled={!displayConfig?.idle_timeout_sec}
                 onChange={(e) => {
                   const pct = parseInt(e.target.value, 10)
@@ -1411,8 +1411,10 @@ export function App(): JSX.Element {
             </label>
             <p className="muted small">
               Note: on the Waveshare 7B the touchscreen only detects
-              taps when the backlight is at least 20%. Lower settings
-              still wake on notifications.
+              taps reliably very close to full brightness. Picking a
+              lower value still saves power but the panel will only
+              wake on incoming notifications or a fresh layout push,
+              not on a tap.
             </p>
             <div className="modal-actions">
               <button onClick={() => setShowDisplayModal(false)}>done</button>
