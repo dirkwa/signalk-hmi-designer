@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # @types/node major versions track the Node.js major. package.json
+      # engines pins Node >= 22.5.0 so types must reflect what's
+      # actually available on every supported version. Allow updates
+      # within the v22.x line; ignore v23+.
+      - dependency-name: '@types/node'
+        versions: ['>=23']
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch
