@@ -22,7 +22,12 @@ import 'react-resizable/css/styles.css'
 
 import { WasmCanvas } from './WasmCanvas'
 import { useNotifications, useSkValues } from './skStream'
-import { DEFAULT_TAB_STRIP_HEIGHT, STATUS_OVERLAY_HEIGHT } from './schema'
+import {
+  DEFAULT_TAB_STRIP_HEIGHT,
+  IDLE_DIM_PRESETS,
+  IDLE_TIMEOUT_PRESETS,
+  STATUS_OVERLAY_HEIGHT,
+} from './schema'
 
 import {
   deriveDisplayDefaults,
@@ -316,6 +321,10 @@ export function App(): JSX.Element {
     Layout['notifications'] | undefined
   >(undefined)
   const [showNotifModal, setShowNotifModal] = useState<boolean>(false)
+  const [displayConfig, setDisplayConfig] = useState<
+    Layout['display'] | undefined
+  >(undefined)
+  const [showDisplayModal, setShowDisplayModal] = useState<boolean>(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // Interim position of a currently-dragging/resizing tile. Set by
   // RGL onDrag/onResize, cleared on stop. Read by the WASM canvas
@@ -475,9 +484,10 @@ export function App(): JSX.Element {
       name: 'Designer',
       status_overlay: statusOverlay,
       ...(notifConfig ? { notifications: notifConfig } : {}),
+      ...(displayConfig ? { display: displayConfig } : {}),
       screens
     }),
-    [screens, statusOverlay, notifConfig]
+    [screens, statusOverlay, notifConfig, displayConfig]
   )
 
   // Canvas dimensions track the connected device's /hello.display
@@ -889,6 +899,7 @@ export function App(): JSX.Element {
     setSelectedId(null)
     if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
     if (l.notifications !== undefined) setNotifConfig(l.notifications)
+    if (l.display !== undefined) setDisplayConfig(l.display)
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
         for (const p of bindsOf(w)) {
@@ -1260,6 +1271,14 @@ export function App(): JSX.Element {
           >
             Notifications
           </button>
+          {hello?.display?.idle_timeout && (
+            <button
+              onClick={() => setShowDisplayModal(true)}
+              title="Backlight power-save (idle timeout)"
+            >
+              Display
+            </button>
+          )}
         </div>
       </header>
 
@@ -1329,6 +1348,74 @@ export function App(): JSX.Element {
                 clear
               </button>
               <button onClick={() => setShowNotifModal(false)}>done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDisplayModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowDisplayModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Display</h3>
+            <p className="muted small">
+              Backlight power save. After the chosen idle interval the
+              panel dims to the chosen brightness. Any touch, incoming
+              notification (≥ min state), or a fresh layout push wakes
+              it and re-arms the timer.
+            </p>
+            <label>
+              idle timeout
+              <select
+                value={displayConfig?.idle_timeout_sec ?? 0}
+                onChange={(e) => {
+                  const sec = parseInt(e.target.value, 10)
+                  if (sec === 0) {
+                    setDisplayConfig(undefined)
+                  } else {
+                    setDisplayConfig({
+                      idle_timeout_sec: sec,
+                      idle_dim_pct: displayConfig?.idle_dim_pct ?? 20,
+                    })
+                  }
+                }}
+              >
+                {IDLE_TIMEOUT_PRESETS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              idle brightness
+              <select
+                value={displayConfig?.idle_dim_pct ?? 20}
+                disabled={!displayConfig?.idle_timeout_sec}
+                onChange={(e) => {
+                  const pct = parseInt(e.target.value, 10)
+                  setDisplayConfig({
+                    idle_timeout_sec: displayConfig?.idle_timeout_sec ?? 0,
+                    idle_dim_pct: pct,
+                  })
+                }}
+              >
+                {IDLE_DIM_PRESETS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted small">
+              Note: on the Waveshare 7B the touchscreen only detects
+              taps when the backlight is at least 20%. Lower settings
+              still wake on notifications.
+            </p>
+            <div className="modal-actions">
+              <button onClick={() => setShowDisplayModal(false)}>done</button>
             </div>
           </div>
         </div>

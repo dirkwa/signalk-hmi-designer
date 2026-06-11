@@ -231,8 +231,57 @@ export interface Layout {
   /** Layout-level alert-overlay configuration. Default behaviour
    *  when omitted: enabled, min_state="alarm", modal ack. */
   notifications?: NotificationsConfig
+  /** Backlight power-save settings. */
+  display?: LayoutDisplayConfig
   screens: Screen[]
 }
+
+/** Layout-level display chrome. Distinct from the per-widget
+ *  DisplayConfig (which controls value formatting). */
+export interface LayoutDisplayConfig {
+  /** Seconds of user inactivity before the backlight dims down.
+   *  0 (or omitted) disables the dimmer — backlight stays on. Touch,
+   *  any incoming notification, and a fresh layout push all re-arm
+   *  the timer back to the full window. */
+  idle_timeout_sec?: number
+  /** Backlight brightness percentage (0-100) when idle. Default 20.
+   *  On the Waveshare 7B the GT911 touch controller only detects
+   *  taps when the backlight is >= ~20%, so values below that
+   *  disable tap-to-wake (notifications still wake the screen). */
+  idle_dim_pct?: number
+}
+
+/** Preset idle-timeout values surfaced in the designer's Display
+ *  modal. 0 = never (always on). */
+export const IDLE_TIMEOUT_PRESETS: ReadonlyArray<{
+  value: number
+  label: string
+}> = [
+  { value: 0, label: 'Never (always on)' },
+  { value: 60, label: '1 min' },
+  { value: 120, label: '2 min' },
+  { value: 300, label: '5 min' },
+  { value: 600, label: '10 min' },
+  { value: 900, label: '15 min' },
+  { value: 1800, label: '30 min' },
+  { value: 3600, label: '60 min' },
+]
+
+/** Idle-brightness presets surfaced in the designer's Display modal.
+ *  20% is the firmware default (lowest level at which the Waveshare
+ *  7B touchscreen still detects taps). Lower values darken further
+ *  but disable tap-to-wake (notifications still wake regardless). */
+export const IDLE_DIM_PRESETS: ReadonlyArray<{
+  value: number
+  label: string
+}> = [
+  { value: 0, label: 'Off (notifications only)' },
+  { value: 5, label: '5% (very dark, no tap-wake)' },
+  { value: 10, label: '10% (dark, no tap-wake)' },
+  { value: 20, label: '20% (default, tap-wake works)' },
+  { value: 30, label: '30%' },
+  { value: 50, label: '50%' },
+]
 
 /** Height in device pixels of the status overlay strip (matches the
  *  firmware constant kStripHeight in status_overlay.cpp). */
@@ -247,7 +296,12 @@ export interface HelloResponse {
   name?: string
   hostname?: string
   firmware?: string
-  display?: { w: number; h: number }
+  display?: {
+    w: number
+    h: number
+    idle_timeout?: boolean
+    idle_dim_pct?: boolean
+  }
   widgets: Record<string, { fields: string[] }>
   active_layout_name?: string
   layout_source?: string
