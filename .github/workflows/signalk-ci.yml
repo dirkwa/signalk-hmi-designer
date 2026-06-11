@@ -9,9 +9,13 @@
 name: SignalK Plugin CI
 
 on:
+  # Only run on push to master so that a same-repo PR (which also
+  # pushes its branch) doesn't double-trigger and burn two CI runs per
+  # update. PRs from any branch — same-repo or fork — still go through
+  # the pull_request trigger.
   push:
     branches:
-      - '**'
+      - master
   pull_request:
     branches:
       - '**'
