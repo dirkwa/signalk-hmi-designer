@@ -1,6 +1,6 @@
 {
   "name": "signalk-hmi-designer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "SignalK webapp that designs HMI layouts (JSON) for runtime-rendering display devices",
   "main": "plugin/index.js",
   "type": "module",
