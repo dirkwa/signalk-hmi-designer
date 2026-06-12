@@ -4,6 +4,13 @@
   "description": "SignalK webapp that designs HMI layouts (JSON) for runtime-rendering display devices",
   "main": "plugin/index.js",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./plugin/index.d.ts",
+      "import": "./plugin/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

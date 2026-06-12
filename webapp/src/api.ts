@@ -2,10 +2,10 @@
 // /device-proxy so the browser doesn't see cross-origin requests.
 
 import {
-  HelloResponse,
   isHelloResponse,
-  Layout,
-  SCHEMA_VERSION
+  SCHEMA_VERSION,
+  type HelloResponse,
+  type Layout,
 } from './schema'
 
 const PLUGIN_BASE = '/plugins/signalk-hmi-designer'

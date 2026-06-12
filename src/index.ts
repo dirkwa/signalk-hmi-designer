@@ -1,5 +1,5 @@
-import { Plugin, ServerAPI } from '@signalk/server-api'
-import { Request, Response, IRouter } from 'express'
+import type { Plugin, ServerAPI } from '@signalk/server-api'
+import type { Request, Response, IRouter } from 'express'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
