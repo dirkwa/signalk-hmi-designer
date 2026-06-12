@@ -63,6 +63,14 @@ describe('firmwareMeets', () => {
     expect(firmwareMeets('p4-cockpit-jlp-0.0.9', '0.1.0')).toBe(false)
   })
 
+  it('accepts a higher major', () => {
+    expect(firmwareMeets('p4-cockpit-jlp-1.0.0', '0.1.0')).toBe(true)
+  })
+
+  it('rejects an older major even with higher minor + patch', () => {
+    expect(firmwareMeets('p4-cockpit-jlp-0.9.9', '1.0.0')).toBe(false)
+  })
+
   it('rejects undefined firmware (cannot tell)', () => {
     expect(firmwareMeets(undefined, '0.1.0')).toBe(false)
   })
