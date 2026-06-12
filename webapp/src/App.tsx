@@ -43,7 +43,7 @@ import {
   type MetaZone,
   type PushResult
 } from './api'
-import { Layout, Screen, Widget, WidgetKind, HelloResponse } from './schema'
+import type { Layout, Screen, Widget, WidgetKind, HelloResponse } from './schema'
 import './app.css'
 
 declare const __PLUGIN_VERSION__: string

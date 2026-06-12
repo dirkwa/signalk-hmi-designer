@@ -17,6 +17,7 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
     "types": ["vite/client"]
   },
   "include": ["webapp/**/*.ts", "webapp/**/*.tsx", "vite.config.ts"]
