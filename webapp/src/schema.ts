@@ -293,6 +293,44 @@ export const STATUS_OVERLAY_HEIGHT = 28
 /** Default bottom tab-strip height when not set on the layout. */
 export const DEFAULT_TAB_STRIP_HEIGHT = 56
 
+/** Lowest device firmware version this designer build is willing to
+ *  push to. Older firmware predates fixes that affect the boot
+ *  recovery path and the touch / backlight pipeline; pushing a
+ *  newer layout to it tends to leave the screen black under the
+ *  status overlay. Bump alongside the firmware repo's git tag. */
+export const MIN_DEVICE_FIRMWARE = '0.1.0'
+
+/** Parse a firmware string like "p4-cockpit-jlp-0.1.0" into a
+ *  semver-shape `{major, minor, patch}`. Returns null when the
+ *  input doesn't end in `M.m.p`. */
+export function parseFirmwareVersion(
+  s: string | undefined
+): { major: number; minor: number; patch: number } | null {
+  if (!s) return null
+  const m = /(\d+)\.(\d+)\.(\d+)\s*$/.exec(s)
+  if (!m) return null
+  const major = Number(m[1])
+  const minor = Number(m[2])
+  const patch = Number(m[3])
+  if (!Number.isFinite(major) || !Number.isFinite(minor) || !Number.isFinite(patch)) {
+    return null
+  }
+  return { major, minor, patch }
+}
+
+/** Return true when `actual` (from `/hello.firmware`) is at least
+ *  the version `min`. Null actual means we can't tell — treat as
+ *  too-old so the user gets a clear error rather than a silent
+ *  half-broken push. */
+export function firmwareMeets(actual: string | undefined, min: string): boolean {
+  const a = parseFirmwareVersion(actual)
+  const b = parseFirmwareVersion(min)
+  if (!a || !b) return false
+  if (a.major !== b.major) return a.major > b.major
+  if (a.minor !== b.minor) return a.minor > b.minor
+  return a.patch >= b.patch
+}
+
 /** Returned by the device's GET /hello — capability descriptor. */
 export interface HelloResponse {
   schema: number
