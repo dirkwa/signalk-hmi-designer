@@ -12,7 +12,7 @@
 // widgets only. Screen switches in the designer call back into the
 // wasm bridge with the new screen's widget list.
 
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type { Layout, Screen } from './schema'
 import type { MetaZone, NotificationRow } from './api'
 import type { SkValue } from './skStream'
@@ -233,7 +233,7 @@ export function WasmCanvas({
   notifications,
   visible,
   onStatus,
-}: WasmCanvasProps): JSX.Element {
+}: WasmCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [modReady, setModReady] = useState<JlpWasmModule | null>(null)
 
