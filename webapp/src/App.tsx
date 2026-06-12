@@ -26,7 +26,9 @@ import {
   DEFAULT_TAB_STRIP_HEIGHT,
   IDLE_DIM_PRESETS,
   IDLE_TIMEOUT_PRESETS,
+  MIN_DEVICE_FIRMWARE,
   STATUS_OVERLAY_HEIGHT,
+  firmwareMeets,
 } from './schema'
 
 import {
@@ -1061,6 +1063,19 @@ export function App(): React.JSX.Element {
   const onPush = async (): Promise<void> => {
     setPushErr(null)
     setPushResult(null)
+    // Refuse to push to a device whose firmware predates the fixes
+    // this designer assumes are in place (boot-store recovery, touch
+    // release-coords, backlight inversion). Pushing through anyway
+    // tends to leave the screen showing just the status overlay over
+    // black after the next reboot.
+    if (hello && !firmwareMeets(hello.firmware, MIN_DEVICE_FIRMWARE)) {
+      setPushErr(
+        `Device firmware ${hello.firmware ?? '(unknown)'} is older than the ` +
+          `${MIN_DEVICE_FIRMWARE} this designer build requires. Flash the ` +
+          `latest sensesp-p4-cockpit release and try again.`
+      )
+      return
+    }
     try {
       const r = await pushLayout(deviceUrl, layoutDoc)
       setPushResult(r)
