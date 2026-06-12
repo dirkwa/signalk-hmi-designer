@@ -208,7 +208,7 @@ function NumberField(props: {
   className?: string
   style?: React.CSSProperties
   min?: number
-}): JSX.Element {
+}): React.JSX.Element {
   const [draft, setDraft] = useState<string>(String(props.value))
   // Track which canonical value the current draft corresponds to so
   // we can detect external changes (paste, load layout) without
@@ -261,7 +261,7 @@ function SortableTab(props: {
   showClose: boolean
   onActivate: () => void
   onClose: () => void
-}): JSX.Element {
+}): React.JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: props.id })
   const style: React.CSSProperties = {
@@ -302,7 +302,7 @@ function SortableTab(props: {
 
 /* ---------- the app ---------- */
 
-export function App(): JSX.Element {
+export function App(): React.JSX.Element {
   const [deviceUrl, setDeviceUrl] = useState<string>(
     'http://p4-cockpit.local:8081'
   )
