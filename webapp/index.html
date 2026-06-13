@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HMI Designer</title>
+    <!-- Same icon that ships in the SK appstore tile (webapp/public/icon.svg).
+         vite emits this verbatim into public/ and SK mounts the bundle at
+         /signalk-hmi-designer/, so the resolved URL works both in `npm run
+         dev` and in production. -->
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
     <!-- LVGL on the device uses the Montserrat font (14/20/28). Load
          the same family in the designer so widget previews look
          close to what the panel actually renders. -->
