@@ -446,6 +446,16 @@ export function App(): React.JSX.Element {
       return
     }
     let cancelled = false
+    // Minimum gap between the START of one screenshot fetch and the
+    // next. Each /screenshot on the device takes an lv_snapshot +
+    // JPEG encode on its single LVGL/event_loop task (~hundreds of
+    // ms). Polling with no gap pins that task at 100% and starves
+    // everything else on it — most visibly, a concurrent push times
+    // out ("device proxy 504"). 750 ms keeps the mirror feeling live
+    // while leaving the device room to service pushes and its own
+    // work. The device also single-flights /screenshot (429 on a
+    // second concurrent request) as a belt-and-suspenders backstop.
+    const MIN_INTERVAL_MS = 750
     const loop = async () => {
       while (!cancelled) {
         const t0 = performance.now()
@@ -467,10 +477,18 @@ export function App(): React.JSX.Element {
             setLiveMirrorStatus(
               `err: ${e instanceof Error ? e.message : String(e)}`
             )
-            // Back off briefly on errors so we don't hammer a down
-            // device. 1 s is short enough that recovery feels instant.
+            // Back off harder on errors (incl. 429 in-flight) so we
+            // don't hammer a busy or down device.
             await new Promise((r) => setTimeout(r, 1000))
+            continue
           }
+        }
+        // Pace the loop: sleep out the remainder of MIN_INTERVAL_MS
+        // since this iteration started, so a fast device doesn't get
+        // polled back-to-back.
+        const remaining = MIN_INTERVAL_MS - (performance.now() - t0)
+        if (remaining > 0 && !cancelled) {
+          await new Promise((r) => setTimeout(r, remaining))
         }
       }
     }
