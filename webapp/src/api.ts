@@ -5,7 +5,7 @@ import {
   isHelloResponse,
   SCHEMA_VERSION,
   type HelloResponse,
-  type Layout,
+  type Layout
 } from './schema'
 
 const PLUGIN_BASE = '/plugins/signalk-hmi-designer'
@@ -297,21 +297,15 @@ export async function fetchNotifications(
       // the other, and the palette + firmware speak "warn".
       const rawState = String(v.state ?? '')
       const state = rawState === 'warning' ? 'warn' : rawState
-      if (
-        !includeCleared &&
-        (state === 'normal' || state === 'nominal')
-      ) {
+      if (!includeCleared && (state === 'normal' || state === 'nominal')) {
         return
       }
       out.push({
         path: pathParts.join('.'),
         state,
         message: String(v.message ?? ''),
-        method: Array.isArray(v.method)
-          ? (v.method as string[])
-          : undefined,
-        createdAt:
-          typeof v.createdAt === 'string' ? v.createdAt : undefined
+        method: Array.isArray(v.method) ? (v.method as string[]) : undefined,
+        createdAt: typeof v.createdAt === 'string' ? v.createdAt : undefined
       })
       return
     }

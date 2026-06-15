@@ -50,6 +50,7 @@
   ],
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx,html}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx,html}\"",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx}\"",
     "typecheck:webapp": "tsc -p tsconfig.webapp.json",
     "build:plugin": "tsc",

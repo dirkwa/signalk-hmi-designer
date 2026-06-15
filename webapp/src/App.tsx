@@ -7,14 +7,14 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  closestCenter,
+  closestCenter
 } from '@dnd-kit/core'
 import {
   SortableContext,
   arrayMove,
   horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
-  useSortable,
+  useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import 'react-grid-layout/css/styles.css'
@@ -28,7 +28,7 @@ import {
   IDLE_TIMEOUT_PRESETS,
   MIN_DEVICE_FIRMWARE,
   STATUS_OVERLAY_HEIGHT,
-  firmwareMeets,
+  firmwareMeets
 } from './schema'
 
 import {
@@ -43,7 +43,13 @@ import {
   type MetaZone,
   type PushResult
 } from './api'
-import type { Layout, Screen, Widget, WidgetKind, HelloResponse } from './schema'
+import type {
+  Layout,
+  Screen,
+  Widget,
+  WidgetKind,
+  HelloResponse
+} from './schema'
 import './app.css'
 
 declare const __PLUGIN_VERSION__: string
@@ -74,7 +80,10 @@ function bindsOf(w: Widget): string[] {
 }
 
 /** Returns the first `<prefix>-<n>` not already present in `existing`. */
-function freshId(prefix: string, existing: ReadonlyArray<{ id: string }>): string {
+function freshId(
+  prefix: string,
+  existing: ReadonlyArray<{ id: string }>
+): string {
   const taken = new Set(existing.map((w) => w.id))
   for (let n = 1; n < 1_000_000; n++) {
     const candidate = `${prefix}-${n}`
@@ -83,7 +92,10 @@ function freshId(prefix: string, existing: ReadonlyArray<{ id: string }>): strin
   throw new Error('genId exhausted (somehow)')
 }
 
-function defaultWidget(kind: WidgetKind, existing: ReadonlyArray<{ id: string }>): Widget {
+function defaultWidget(
+  kind: WidgetKind,
+  existing: ReadonlyArray<{ id: string }>
+): Widget {
   const id = freshId(kind, existing)
   const base = {
     id,
@@ -264,15 +276,21 @@ function SortableTab(props: {
   onActivate: () => void
   onClose: () => void
 }): React.JSX.Element {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: props.id })
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: props.id })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
     // Bump z so the dragged tab overlays its neighbors instead of
     // disappearing under them while in motion.
-    zIndex: isDragging ? 5 : 'auto',
+    zIndex: isDragging ? 5 : 'auto'
   }
   return (
     <button
@@ -341,9 +359,9 @@ export function App(): React.JSX.Element {
   //  - 'widget'    -> top-level widget bind (default, single-bind widgets)
   //  - {barIdx: N} -> sub-bar bind inside a bargroup
   // Reset to 'widget' whenever the selection changes.
-  const [bindTarget, setBindTarget] = useState<
-    'widget' | { barIdx: number }
-  >('widget')
+  const [bindTarget, setBindTarget] = useState<'widget' | { barIdx: number }>(
+    'widget'
+  )
   // Reset bindTarget when the user picks a different widget so a
   // path click after re-selection doesn't accidentally go to the
   // last-focused sub-bar of the previous selection.
@@ -353,18 +371,17 @@ export function App(): React.JSX.Element {
 
   // The currently-active screen. Reads use this; writes use setActive().
   // Multi-screen layouts: tab strip at the bottom of canvas switches.
-  const screen = screens[activeIdx] ?? screens[0] ?? {
-    id: 'main',
-    title: 'Main',
-    widgets: []
-  }
+  const screen = screens[activeIdx] ??
+    screens[0] ?? {
+      id: 'main',
+      title: 'Main',
+      widgets: []
+    }
 
   // Replace the active screen with a new value. Helper because every
   // legacy site that did setScreen((prev) => ...) now needs to splice
   // into the screens array at activeIdx.
-  const setScreen = (
-    update: Screen | ((prev: Screen) => Screen)
-  ): void => {
+  const setScreen = (update: Screen | ((prev: Screen) => Screen)): void => {
     setScreens((prev) => {
       const cur = prev[activeIdx] ?? prev[0]
       if (!cur) return prev
@@ -469,7 +486,9 @@ export function App(): React.JSX.Element {
           if (!cancelled) {
             setShotUrl(url)
             const ms = Math.round(performance.now() - t0)
-            setLiveMirrorStatus(`${(blob.size / 1024).toFixed(0)} KB · ${ms} ms`)
+            setLiveMirrorStatus(
+              `${(blob.size / 1024).toFixed(0)} KB · ${ms} ms`
+            )
           }
           if (prev) URL.revokeObjectURL(prev)
         } catch (e) {
@@ -538,7 +557,7 @@ export function App(): React.JSX.Element {
       ...layoutDoc,
       screens: layoutDoc.screens.map((s, i) =>
         i === activeIdx ? { ...s, widgets: s.widgets.map(apply) } : s
-      ),
+      )
     }
   }, [layoutDoc, dragPreview, activeIdx, colPxW])
 
@@ -560,17 +579,14 @@ export function App(): React.JSX.Element {
   // renders.
   const wantsNotifications = useMemo(
     () =>
-      screens.some((s) =>
-        s.widgets.some((w) => w.type === 'notifications')
-      ),
+      screens.some((s) => s.widgets.some((w) => w.type === 'notifications')),
     [screens]
   )
   const wantsCleared = useMemo(
     () =>
       screens.some((s) =>
         s.widgets.some(
-          (w) =>
-            w.type === 'notifications' && w.include_cleared === true
+          (w) => w.type === 'notifications' && w.include_cleared === true
         )
       ),
     [screens]
@@ -677,7 +693,7 @@ export function App(): React.JSX.Element {
   const sortSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
+      coordinateGetter: sortableKeyboardCoordinates
     })
   )
   const onTabDragEnd = (e: DragEndEvent): void => {
@@ -832,9 +848,12 @@ export function App(): React.JSX.Element {
           const cur = w.display ?? {}
           const merged = {
             unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
-            scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+            scale:
+              cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
             offset:
-              cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+              cur.offset !== undefined && cur.offset !== 0
+                ? cur.offset
+                : d.offset,
             decimals:
               cur.decimals !== undefined && cur.decimals !== 1
                 ? cur.decimals
@@ -912,9 +931,11 @@ export function App(): React.JSX.Element {
   // colors appear immediately.
   const adoptLayout = (raw: Layout): void => {
     const l = migrateLayout(raw)
-    setScreens(l.screens.length > 0 ? l.screens : [
-      { id: 'main', title: 'Main', widgets: [] }
-    ])
+    setScreens(
+      l.screens.length > 0
+        ? l.screens
+        : [{ id: 'main', title: 'Main', widgets: [] }]
+    )
     setActiveIdx(0)
     setSelectedId(null)
     if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
@@ -964,12 +985,19 @@ export function App(): React.JSX.Element {
                         ...b,
                         display: {
                           unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
-                          scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                          scale:
+                            cur.scale !== undefined && cur.scale !== 1
+                              ? cur.scale
+                              : d.scale,
                           offset:
-                            cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                            cur.offset !== undefined && cur.offset !== 0
+                              ? cur.offset
+                              : d.offset,
                           decimals:
-                            cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
-                        },
+                            cur.decimals !== undefined && cur.decimals !== 1
+                              ? cur.decimals
+                              : d.decimals
+                        }
                       }
                     })
                     return { ...wid, bars: bars2 }
@@ -993,14 +1021,21 @@ export function App(): React.JSX.Element {
                     ...wid,
                     display: {
                       unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
-                      scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                      scale:
+                        cur.scale !== undefined && cur.scale !== 1
+                          ? cur.scale
+                          : d.scale,
                       offset:
-                        cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                        cur.offset !== undefined && cur.offset !== 0
+                          ? cur.offset
+                          : d.offset,
                       decimals:
-                        cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
-                    },
+                        cur.decimals !== undefined && cur.decimals !== 1
+                          ? cur.decimals
+                          : d.decimals
+                    }
                   } as Widget
-                }),
+                })
               }))
             )
           })
@@ -1025,7 +1060,10 @@ export function App(): React.JSX.Element {
 
   const onLoad = async (): Promise<void> => {
     setFileMsg(null)
-    if (!confirm('Load saved layout from SK server? Unsaved edits will be lost.')) return
+    if (
+      !confirm('Load saved layout from SK server? Unsaved edits will be lost.')
+    )
+      return
     try {
       const saved = await loadSavedLayout()
       if (!saved) {
@@ -1071,7 +1109,8 @@ export function App(): React.JSX.Element {
   }
 
   const onClear = (): void => {
-    if (!confirm('Clear the canvas? All screens and widgets will be removed.')) return
+    if (!confirm('Clear the canvas? All screens and widgets will be removed.'))
+      return
     setScreens([{ id: 'main', title: 'Main', widgets: [] }])
     setActiveIdx(0)
     setSelectedId(null)
@@ -1323,11 +1362,11 @@ export function App(): React.JSX.Element {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Alert overlay</h3>
             <p className="muted small">
-              Layout-level setting. The device pops a full-screen modal
-              above the active screen whenever SK publishes a
-              notification with state &gt;= min state. Tapping ACK on
-              the device PUTs <code>state: "normal"</code> to the
-              notification path. Defaults: enabled, alarm.
+              Layout-level setting. The device pops a full-screen modal above
+              the active screen whenever SK publishes a notification with state
+              &gt;= min state. Tapping ACK on the device PUTs{' '}
+              <code>state: "normal"</code> to the notification path. Defaults:
+              enabled, alarm.
             </p>
             <label>
               <input
@@ -1394,10 +1433,9 @@ export function App(): React.JSX.Element {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Display</h3>
             <p className="muted small">
-              Backlight power save. After the chosen idle interval the
-              panel dims to the chosen brightness. Any touch, incoming
-              notification (≥ min state), or a fresh layout push wakes
-              it and re-arms the timer.
+              Backlight power save. After the chosen idle interval the panel
+              dims to the chosen brightness. Any touch, incoming notification (≥
+              min state), or a fresh layout push wakes it and re-arms the timer.
             </p>
             <label>
               idle timeout
@@ -1410,7 +1448,7 @@ export function App(): React.JSX.Element {
                   } else {
                     setDisplayConfig({
                       idle_timeout_sec: sec,
-                      idle_dim_pct: displayConfig?.idle_dim_pct ?? 0,
+                      idle_dim_pct: displayConfig?.idle_dim_pct ?? 0
                     })
                   }
                 }}
@@ -1431,7 +1469,7 @@ export function App(): React.JSX.Element {
                   const pct = parseInt(e.target.value, 10)
                   setDisplayConfig({
                     idle_timeout_sec: displayConfig?.idle_timeout_sec ?? 0,
-                    idle_dim_pct: pct,
+                    idle_dim_pct: pct
                   })
                 }}
               >
@@ -1443,10 +1481,10 @@ export function App(): React.JSX.Element {
               </select>
             </label>
             <p className="muted small">
-              While dimmed the device shows a "TAP TO WAKE" overlay
-              that consumes the first wake-tap, so no toggle or button
-              underneath fires by accident. Tap-wake works at every
-              brightness level — including 0% (fully off).
+              While dimmed the device shows a "TAP TO WAKE" overlay that
+              consumes the first wake-tap, so no toggle or button underneath
+              fires by accident. Tap-wake works at every brightness level —
+              including 0% (fully off).
             </p>
             <div className="modal-actions">
               <button onClick={() => setShowDisplayModal(false)}>done</button>
@@ -1669,9 +1707,7 @@ export function App(): React.JSX.Element {
                           type="button"
                           className="ghost"
                           onClick={() => {
-                            const next = selected.bars.filter(
-                              (_, j) => j !== i
-                            )
+                            const next = selected.bars.filter((_, j) => j !== i)
                             // Keep at least one bar; refuse to drop the last.
                             if (next.length === 0) return
                             updateWidget(selected.id, { bars: next })
@@ -1696,10 +1732,11 @@ export function App(): React.JSX.Element {
                         // hides the new bar at the bottom and the
                         // click feels like a no-op.
                         requestAnimationFrame(() => {
-                          const btn = e.currentTarget as HTMLButtonElement | null
+                          const btn =
+                            e.currentTarget as HTMLButtonElement | null
                           btn?.scrollIntoView({
                             block: 'nearest',
-                            behavior: 'smooth',
+                            behavior: 'smooth'
                           })
                         })
                       }}
@@ -1800,7 +1837,10 @@ export function App(): React.JSX.Element {
                           placeholder="%s"
                           onChange={(e) => {
                             const next = [...selected.columns]
-                            next[i] = { ...c, format: e.target.value || undefined }
+                            next[i] = {
+                              ...c,
+                              format: e.target.value || undefined
+                            }
                             updateWidget(selected.id, { columns: next })
                           }}
                         />
@@ -1903,10 +1943,10 @@ export function App(): React.JSX.Element {
                     />
                   </label>
                   <div className="muted small">
-                    With release_value set, this is a momentary button
-                    (PUT on press, PUT on release). Without, it's a
-                    one-shot action. hold_ms requires sustained press
-                    before any PUT fires — safety latch for STOP, etc.
+                    With release_value set, this is a momentary button (PUT on
+                    press, PUT on release). Without, it's a one-shot action.
+                    hold_ms requires sustained press before any PUT fires —
+                    safety latch for STOP, etc.
                   </div>
                 </>
               )}
@@ -2052,8 +2092,8 @@ export function App(): React.JSX.Element {
                 </button>
               </label>
               <div className="muted small">
-                Zone state colors always win when the bound path has a
-                matching zone — these are fallbacks.
+                Zone state colors always win when the bound path has a matching
+                zone — these are fallbacks.
               </div>
             </div>
           )}
@@ -2139,81 +2179,81 @@ export function App(): React.JSX.Element {
                 bottom: showTabStrip ? tabStripHeight : 0
               }}
             >
-            <GridLayout
-              className="grid"
-              layout={grid}
-              cols={COLS}
-              rowHeight={ROW_HEIGHT}
-              width={displayW}
-              // Force the grid container to fill the full canvas height
-              // (display minus the status overlay strip) so widgets can
-              // be dragged into the lower portion. Without this RGL
-              // auto-sizes to the lowest existing widget's row, which
-              // leaves no drop zone below.
-              autoSize={false}
-              maxRows={Math.floor(
-                (displayH -
-                  (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
-                  (showTabStrip ? tabStripHeight : 0)) /
-                  ROW_HEIGHT
-              )}
-              // RGL defaults margin=[10,10] and containerPadding=[10,10]
-              // which shift everything down by ~10-20px per widget — the
-              // canvas no longer reflects 1:1 with the device. Zero both
-              // so JSON pixel coords map directly to canvas pixels.
-              margin={[0, 0]}
-              containerPadding={[0, 0]}
-              // The designer must NOT auto-reflow: a drag of one
-              // widget should never displace another. allowOverlap lets
-              // tiles park anywhere; compactType=null disables gravity;
-              // preventCollision=true keeps RGL from pushing siblings.
-              compactType={null}
-              preventCollision={true}
-              allowOverlap={true}
-              // Drag only via the chrome bar (which only appears on
-              // selected widgets), so unselected widgets behave as
-              // pure click targets.
-              draggableHandle=".chrome"
-              onDrag={onDragOrResize}
-              onResize={onDragOrResize}
-              onDragStop={onDragStop}
-              onResizeStop={onResizeStop}
-            >
-              {screen.widgets.map((w) => {
-                const isSel = selectedId === w.id
-                return (
-                  <div
-                    key={w.id}
-                    className={`tile ${isSel ? 'sel' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setSelectedId(w.id)
-                    }}
-                  >
-                    {isSel && (
-                      <div className="chrome">
-                        <span>{w.type}</span>
-                        <button
-                          className="x"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            removeWidget(w.id)
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    )}
-                    {/* No per-tile preview render. The wasm canvas
+              <GridLayout
+                className="grid"
+                layout={grid}
+                cols={COLS}
+                rowHeight={ROW_HEIGHT}
+                width={displayW}
+                // Force the grid container to fill the full canvas height
+                // (display minus the status overlay strip) so widgets can
+                // be dragged into the lower portion. Without this RGL
+                // auto-sizes to the lowest existing widget's row, which
+                // leaves no drop zone below.
+                autoSize={false}
+                maxRows={Math.floor(
+                  (displayH -
+                    (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
+                    (showTabStrip ? tabStripHeight : 0)) /
+                    ROW_HEIGHT
+                )}
+                // RGL defaults margin=[10,10] and containerPadding=[10,10]
+                // which shift everything down by ~10-20px per widget — the
+                // canvas no longer reflects 1:1 with the device. Zero both
+                // so JSON pixel coords map directly to canvas pixels.
+                margin={[0, 0]}
+                containerPadding={[0, 0]}
+                // The designer must NOT auto-reflow: a drag of one
+                // widget should never displace another. allowOverlap lets
+                // tiles park anywhere; compactType=null disables gravity;
+                // preventCollision=true keeps RGL from pushing siblings.
+                compactType={null}
+                preventCollision={true}
+                allowOverlap={true}
+                // Drag only via the chrome bar (which only appears on
+                // selected widgets), so unselected widgets behave as
+                // pure click targets.
+                draggableHandle=".chrome"
+                onDrag={onDragOrResize}
+                onResize={onDragOrResize}
+                onDragStop={onDragStop}
+                onResizeStop={onResizeStop}
+              >
+                {screen.widgets.map((w) => {
+                  const isSel = selectedId === w.id
+                  return (
+                    <div
+                      key={w.id}
+                      className={`tile ${isSel ? 'sel' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedId(w.id)
+                      }}
+                    >
+                      {isSel && (
+                        <div className="chrome">
+                          <span>{w.type}</span>
+                          <button
+                            className="x"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              removeWidget(w.id)
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                      {/* No per-tile preview render. The wasm canvas
                         and the device-mirror overlay both paint the
                         full widget surface elsewhere; the tile
                         itself is just a click + drag target with
                         chrome on selection. */}
-                  </div>
-                )
-              })}
-            </GridLayout>
+                    </div>
+                  )
+                })}
+              </GridLayout>
             </div>
             {showTabStrip && (
               <div
@@ -2279,10 +2319,7 @@ export function App(): React.JSX.Element {
                   // Route the click to whichever bind input the
                   // user last focused: widget-level for most kinds,
                   // a specific sub-bar inside a bargroup.
-                  if (
-                    bindTarget !== 'widget' &&
-                    selected.type === 'bargroup'
-                  ) {
+                  if (bindTarget !== 'widget' && selected.type === 'bargroup') {
                     const i = bindTarget.barIdx
                     const target = selected.bars[i]
                     if (target) {
@@ -2325,17 +2362,28 @@ export function App(): React.JSX.Element {
                               return {
                                 ...b,
                                 display: {
-                                  unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
-                                  scale: cur.scale !== undefined && cur.scale !== 1 ? cur.scale : d.scale,
+                                  unit:
+                                    cur.unit && cur.unit !== ''
+                                      ? cur.unit
+                                      : d.unit,
+                                  scale:
+                                    cur.scale !== undefined && cur.scale !== 1
+                                      ? cur.scale
+                                      : d.scale,
                                   offset:
-                                    cur.offset !== undefined && cur.offset !== 0 ? cur.offset : d.offset,
+                                    cur.offset !== undefined && cur.offset !== 0
+                                      ? cur.offset
+                                      : d.offset,
                                   decimals:
-                                    cur.decimals !== undefined && cur.decimals !== 1 ? cur.decimals : d.decimals,
-                                },
+                                    cur.decimals !== undefined &&
+                                    cur.decimals !== 1
+                                      ? cur.decimals
+                                      : d.decimals
+                                }
                               }
                             })
                             return { ...wid, bars: bars2 }
-                          }),
+                          })
                         }))
                       })
                       return

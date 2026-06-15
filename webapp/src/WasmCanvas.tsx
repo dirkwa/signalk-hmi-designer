@@ -42,7 +42,9 @@ let modulePromise: Promise<JlpWasmModule> | null = null
 let currentCanvas: HTMLCanvasElement | null = null
 let inited = false
 
-const loadModule = async (canvas: HTMLCanvasElement): Promise<JlpWasmModule> => {
+const loadModule = async (
+  canvas: HTMLCanvasElement
+): Promise<JlpWasmModule> => {
   currentCanvas = canvas
   if (modulePromise) return modulePromise
   modulePromise = (async () => {
@@ -74,7 +76,7 @@ const loadModule = async (canvas: HTMLCanvasElement): Promise<JlpWasmModule> => 
       keyEventTarget: canvas,
       mouseEventTarget: canvas,
       print: (s: string) => console.warn('[jlp-wasm]', s),
-      printErr: (s: string) => console.error('[jlp-wasm]', s),
+      printErr: (s: string) => console.error('[jlp-wasm]', s)
     })
     return mod
   })()
@@ -103,7 +105,7 @@ const applyScreen = (mod: JlpWasmModule, screen: Screen): string | null => {
   const doc = {
     schema: 1,
     name: 'designer',
-    screens: [screen],
+    screens: [screen]
   }
   const json = JSON.stringify(doc)
   const errStr = withCString(mod, json, (p) => {
@@ -232,7 +234,7 @@ export function WasmCanvas({
   skValues,
   notifications,
   visible,
-  onStatus,
+  onStatus
 }: WasmCanvasProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [modReady, setModReady] = useState<JlpWasmModule | null>(null)
@@ -260,18 +262,22 @@ export function WasmCanvas({
           // can't re-bind to a different canvas after the fact, so
           // remount-with-different-element warns instead of
           // attempting (and silently failing).
-          onStatus?.('wasm bound to a different canvas; refresh the page to rebind')
+          onStatus?.(
+            'wasm bound to a different canvas; refresh the page to rebind'
+          )
         }
         setModReady(mod)
       })
-      .catch((e) => onStatus?.(`load failed: ${e instanceof Error ? e.message : String(e)}`))
+      .catch((e) =>
+        onStatus?.(`load failed: ${e instanceof Error ? e.message : String(e)}`)
+      )
     return () => {
       cancelled = true
     }
     // displayW/H only matter on first init; the module is a singleton
     // so re-running on every change is wasted work. The intentionally-
     // empty dep array is correct here.
-  }, [])  // eslint-disable-line
+  }, []) // eslint-disable-line
 
   // Re-apply the layout whenever the active screen, any of its
   // widgets, or any path meta changes. The wasm-side build is fast
@@ -305,7 +311,7 @@ export function WasmCanvas({
     pathDescriptions,
     skValues,
     notifications,
-    onStatus,
+    onStatus
   ])
 
   return (
@@ -327,7 +333,7 @@ export function WasmCanvas({
         // clicks pass through to the React-Grid-Layout tiles.
         zIndex: 10,
         pointerEvents: 'none',
-        background: '#0d1117',
+        background: '#0d1117'
       }}
     />
   )
