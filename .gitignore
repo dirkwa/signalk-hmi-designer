@@ -3,6 +3,9 @@ plugin
 # Only ignore the top-level built public/; webapp/public/ holds vite
 # static source assets (icon, etc.) and must be tracked.
 /public
+# WASM glue + binary copied in from sensesp-p4-cockpit-wasm by
+# scripts/copy-wasm.sh at build time — generated, not source.
+webapp/public/wasm/
 *.log
 .DS_Store
 .vite
