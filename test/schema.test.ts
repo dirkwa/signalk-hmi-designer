@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   firmwareMeets,
   isHelloResponse,
-  parseFirmwareVersion,
+  parseFirmwareVersion
 } from '../webapp/src/schema'
 
 describe('isHelloResponse', () => {
@@ -33,7 +33,7 @@ describe('parseFirmwareVersion', () => {
     expect(parseFirmwareVersion('p4-cockpit-jlp-0.1.0')).toEqual({
       major: 0,
       minor: 1,
-      patch: 0,
+      patch: 0
     })
   })
 

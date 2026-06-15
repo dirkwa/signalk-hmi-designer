@@ -198,11 +198,7 @@ export interface Screen {
 
 /** Notification states ordered by ascending severity. Matches the
  *  SignalK convention. */
-export type NotificationState =
-  | 'alert'
-  | 'warn'
-  | 'alarm'
-  | 'emergency'
+export type NotificationState = 'alert' | 'warn' | 'alarm' | 'emergency'
 
 /** Layout-level alert-overlay config. The overlay is a runtime
  *  artifact (modal that pops above the active screen when SK
@@ -265,7 +261,7 @@ export const IDLE_TIMEOUT_PRESETS: ReadonlyArray<{
   { value: 600, label: '10 min' },
   { value: 900, label: '15 min' },
   { value: 1800, label: '30 min' },
-  { value: 3600, label: '60 min' },
+  { value: 3600, label: '60 min' }
 ]
 
 /** Idle-brightness presets surfaced in the designer's Display modal.
@@ -283,7 +279,7 @@ export const IDLE_DIM_PRESETS: ReadonlyArray<{
   { value: 10, label: '10% (very dim)' },
   { value: 25, label: '25% (dim)' },
   { value: 50, label: '50% (medium)' },
-  { value: 75, label: '75% (slight dim)' },
+  { value: 75, label: '75% (slight dim)' }
 ]
 
 /** Height in device pixels of the status overlay strip (matches the
@@ -312,7 +308,11 @@ export function parseFirmwareVersion(
   const major = Number(m[1])
   const minor = Number(m[2])
   const patch = Number(m[3])
-  if (!Number.isFinite(major) || !Number.isFinite(minor) || !Number.isFinite(patch)) {
+  if (
+    !Number.isFinite(major) ||
+    !Number.isFinite(minor) ||
+    !Number.isFinite(patch)
+  ) {
     return null
   }
   return { major, minor, patch }
@@ -322,7 +322,10 @@ export function parseFirmwareVersion(
  *  the version `min`. Null actual means we can't tell — treat as
  *  too-old so the user gets a clear error rather than a silent
  *  half-broken push. */
-export function firmwareMeets(actual: string | undefined, min: string): boolean {
+export function firmwareMeets(
+  actual: string | undefined,
+  min: string
+): boolean {
   const a = parseFirmwareVersion(actual)
   const b = parseFirmwareVersion(min)
   if (!a || !b) return false
