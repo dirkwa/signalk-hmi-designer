@@ -42,4 +42,11 @@ fi
 rm -f "${DEST}/jlp_wasm.js" "${DEST}/jlp_wasm.wasm"
 echo "[copy-wasm] could not obtain wasm bundle — WASM preview will be unavailable" >&2
 echo "[copy-wasm] (build sensesp-p4-cockpit-wasm or check ${RAW_BASE})" >&2
+# Fail loudly in CI / release so a package can't be published without the
+# wasm (the exact "blank WASM canvas" regression this fallback prevents).
+# Local dev stays soft so a missing bundle doesn't block a normal build.
+if [[ "${CI:-}" == "true" || "${REQUIRE_WASM:-0}" == "1" ]]; then
+  echo "[copy-wasm] wasm is required in CI/release mode — failing build" >&2
+  exit 1
+fi
 exit 0
