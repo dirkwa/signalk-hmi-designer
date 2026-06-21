@@ -45,7 +45,14 @@ echo "[copy-wasm] (build sensesp-p4-cockpit-wasm or check ${RAW_BASE})" >&2
 # Fail loudly in CI / release so a package can't be published without the
 # wasm (the exact "blank WASM canvas" regression this fallback prevents).
 # Local dev stays soft so a missing bundle doesn't block a normal build.
-if [[ "${CI:-}" == "true" || "${REQUIRE_WASM:-0}" == "1" ]]; then
+# Match common truthy CI values (GitHub sets CI=true; others use 1/yes/on),
+# case-insensitively, so a non-"true" runner can't slip through.
+ci_flag="$(printf '%s' "${CI:-}" | tr '[:upper:]' '[:lower:]')"
+case "${ci_flag}" in
+  true | 1 | yes | on) ci_required=1 ;;
+  *) ci_required=0 ;;
+esac
+if [[ "${ci_required}" == "1" || "${REQUIRE_WASM:-0}" == "1" ]]; then
   echo "[copy-wasm] wasm is required in CI/release mode — failing build" >&2
   exit 1
 fi
