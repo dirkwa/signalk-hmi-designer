@@ -174,6 +174,16 @@ function defaultWidget(
         ],
         row_color_field: 'state'
       }
+    case 'anchor':
+      return {
+        ...base,
+        type: 'anchor',
+        // Square — the dial is drawn into min(w,h).
+        w: 240,
+        h: 240,
+        label: '',
+        display: { unit: 'm', scale: 1, offset: 0, decimals: 1 }
+      }
   }
 }
 
@@ -1162,7 +1172,8 @@ export function App(): React.JSX.Element {
         'bar',
         'bargroup',
         'button',
-        'notifications'
+        'notifications',
+        'anchor'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1173,7 +1184,8 @@ export function App(): React.JSX.Element {
         k === 'bar' ||
         k === 'bargroup' ||
         k === 'button' ||
-        k === 'notifications'
+        k === 'notifications' ||
+        k === 'anchor'
     )
   }, [hello])
 

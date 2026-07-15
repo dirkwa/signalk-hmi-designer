@@ -14,6 +14,7 @@ export type WidgetKind =
   | 'bargroup'
   | 'button'
   | 'notifications'
+  | 'anchor'
 
 export interface DisplayConfig {
   unit?: string
@@ -180,6 +181,18 @@ export interface ButtonWidget extends WidgetCommon {
   hold_ms?: number
 }
 
+/** Anchor-watch dial. A compass rose with a needle to the dropped
+ *  anchor plus a radius ring showing how close the boat is to the
+ *  alarm limit. Takes no `bind` — it owns a fixed navigation.anchor.*
+ *  path family published by an anchor-alarm plugin (state,
+ *  currentRadius, maxRadius, apparentBearing). The drag alarm itself
+ *  rides notifications.navigation.anchor via the alert overlay, not
+ *  this widget. `display` scales the centre distance text (metres by
+ *  default). */
+export interface AnchorWidget extends WidgetCommon {
+  type: 'anchor'
+}
+
 export type Widget =
   | LabelWidget
   | ValueWidget
@@ -189,6 +202,7 @@ export type Widget =
   | BarGroupWidget
   | ButtonWidget
   | NotificationsWidget
+  | AnchorWidget
 
 export interface Screen {
   id: string
