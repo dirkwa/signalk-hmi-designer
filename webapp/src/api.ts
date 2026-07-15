@@ -152,12 +152,7 @@ export async function fetchSelfPaths(): Promise<string[]> {
  * common shapes; unrecognised formulas fall back to identity.
  */
 export type ZoneState =
-  | 'nominal'
-  | 'normal'
-  | 'alert'
-  | 'warn'
-  | 'alarm'
-  | 'emergency'
+  'nominal' | 'normal' | 'alert' | 'warn' | 'alarm' | 'emergency'
 
 export interface MetaZone {
   lower: number
