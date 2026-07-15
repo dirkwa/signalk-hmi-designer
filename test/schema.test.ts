@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   firmwareMeets,
   isHelloResponse,
-  parseFirmwareVersion
+  parseFirmwareVersion,
+  type AnchorWidget,
+  type Widget,
+  type WidgetKind
 } from '../webapp/src/schema'
 
 describe('isHelloResponse', () => {
@@ -73,5 +76,28 @@ describe('firmwareMeets', () => {
 
   it('rejects undefined firmware (cannot tell)', () => {
     expect(firmwareMeets(undefined, '0.1.0')).toBe(false)
+  })
+})
+
+describe('anchor widget', () => {
+  it("'anchor' is a WidgetKind and an AnchorWidget is a Widget", () => {
+    const kind: WidgetKind = 'anchor'
+    const w: AnchorWidget = {
+      type: 'anchor',
+      id: 'a1',
+      x: 0,
+      y: 0,
+      w: 240,
+      h: 240,
+      display: { unit: 'm', decimals: 1 }
+    }
+    // Assignable to the Widget union (fails to compile if the union
+    // wasn't extended).
+    const asWidget: Widget = w
+    expect(kind).toBe('anchor')
+    expect(asWidget.type).toBe('anchor')
+    // Anchor owns a fixed navigation.anchor.* family, so it carries no
+    // user `bind`.
+    expect('bind' in w).toBe(false)
   })
 })
