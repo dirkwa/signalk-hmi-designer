@@ -176,8 +176,10 @@ export interface NotificationsWidget extends WidgetCommon {
 export interface ButtonWidget extends WidgetCommon {
   type: 'button'
   bind: string
-  press_value: boolean | number | string
-  release_value?: boolean | number | string
+  /** A `null` value PUTs an explicit JSON null — e.g. clearing
+   *  navigation.anchor.position to raise the anchor. */
+  press_value: boolean | number | string | null
+  release_value?: boolean | number | string | null
   hold_ms?: number
 }
 
