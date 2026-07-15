@@ -4,6 +4,7 @@ import {
   isHelloResponse,
   parseFirmwareVersion,
   type AnchorWidget,
+  type ButtonWidget,
   type Widget,
   type WidgetKind
 } from '../webapp/src/schema'
@@ -99,5 +100,26 @@ describe('anchor widget', () => {
     // Anchor owns a fixed navigation.anchor.* family, so it carries no
     // user `bind`.
     expect('bind' in w).toBe(false)
+  })
+})
+
+describe('button null press_value', () => {
+  it('accepts null press_value (raise-anchor button)', () => {
+    const w: ButtonWidget = {
+      type: 'button',
+      id: 'raise',
+      x: 0,
+      y: 0,
+      w: 120,
+      h: 60,
+      bind: 'navigation.anchor.position',
+      press_value: null
+    }
+    const asWidget: Widget = w
+    expect(asWidget.type).toBe('button')
+    expect(w.press_value).toBe(null)
+    // Round-trips through JSON as a real null (not dropped).
+    const round = JSON.parse(JSON.stringify(w))
+    expect(round.press_value).toBe(null)
   })
 })

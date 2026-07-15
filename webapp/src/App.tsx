@@ -1893,18 +1893,25 @@ export function App(): React.JSX.Element {
                   <label>
                     press value
                     <input
-                      value={String(selected.press_value ?? '')}
+                      value={
+                        selected.press_value === null
+                          ? 'null'
+                          : String(selected.press_value ?? '')
+                      }
+                      placeholder='value, or "null" to raise anchor'
                       onChange={(e) => {
                         const t = e.target.value
                         const n = Number(t)
-                        const v: boolean | number | string =
-                          t === 'true'
-                            ? true
-                            : t === 'false'
-                              ? false
-                              : !isNaN(n) && t !== ''
-                                ? n
-                                : t
+                        const v: boolean | number | string | null =
+                          t === 'null'
+                            ? null
+                            : t === 'true'
+                              ? true
+                              : t === 'false'
+                                ? false
+                                : !isNaN(n) && t !== ''
+                                  ? n
+                                  : t
                         updateWidget(selected.id, { press_value: v })
                       }}
                     />
@@ -1915,7 +1922,9 @@ export function App(): React.JSX.Element {
                       value={
                         selected.release_value === undefined
                           ? ''
-                          : String(selected.release_value)
+                          : selected.release_value === null
+                            ? 'null'
+                            : String(selected.release_value)
                       }
                       placeholder="(no release PUT)"
                       onChange={(e) => {
@@ -1927,14 +1936,16 @@ export function App(): React.JSX.Element {
                           return
                         }
                         const n = Number(t)
-                        const v: boolean | number | string =
-                          t === 'true'
-                            ? true
-                            : t === 'false'
-                              ? false
-                              : !isNaN(n)
-                                ? n
-                                : t
+                        const v: boolean | number | string | null =
+                          t === 'null'
+                            ? null
+                            : t === 'true'
+                              ? true
+                              : t === 'false'
+                                ? false
+                                : !isNaN(n)
+                                  ? n
+                                  : t
                         updateWidget(selected.id, { release_value: v })
                       }}
                     />
