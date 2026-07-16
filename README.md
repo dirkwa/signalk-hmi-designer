@@ -89,12 +89,12 @@ The full contract is documented in the firmware repo: [JLP-PROTOCOL.md](https://
 
 Mounted under `/plugins/signalk-hmi-designer/`:
 
-| Method | Endpoint        | Purpose                                                                                                                                            |
-| ------ | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/status`       | Liveness                                                                                                                                           |
-| GET    | `/layout`       | Load the last layout saved on this SK server (404 if none)                                                                                         |
-| PUT    | `/layout`       | Atomic save (tmp+rename) of the current layout                                                                                                     |
-| POST   | `/device-proxy` | Forward GET/POST to the device URL — bypasses CORS, enforces http(s) targets, supports binary responses (for `/screenshot`), 30 s upstream timeout |
+| Method | Endpoint        | Purpose                                                                                                                                                                                                                      |
+| ------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/status`       | Liveness                                                                                                                                                                                                                     |
+| GET    | `/layout`       | Load the last layout saved on this SK server (404 if none)                                                                                                                                                                   |
+| PUT    | `/layout`       | Atomic save (tmp+rename) of the current layout                                                                                                                                                                               |
+| POST   | `/device-proxy` | Forward GET/POST to the device URL — bypasses CORS, accepts only http(s) URL schemes (host is not validated; the SK server is expected to be on a LAN), supports binary responses (for `/screenshot`), 30 s upstream timeout |
 
 ## Develop
 
