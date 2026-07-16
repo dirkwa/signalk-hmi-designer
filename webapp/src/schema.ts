@@ -15,6 +15,7 @@ export type WidgetKind =
   | 'button'
   | 'notifications'
   | 'anchor'
+  | 'anchor_track'
 
 export interface DisplayConfig {
   unit?: string
@@ -195,6 +196,16 @@ export interface AnchorWidget extends WidgetCommon {
   type: 'anchor'
 }
 
+/** Anchor-swing plot, north up. Same navigation.anchor.* family as the
+ *  anchor dial but plotted geographically (uses bearingTrue, not the
+ *  boat-relative apparentBearing): the anchor at centre, the watch-zone
+ *  ring, and the boat's recent track around it — a live "cycle" that
+ *  fades with age. Live tail only (samples since load), not the whole
+ *  session. `display` scales the centre distance text. */
+export interface AnchorTrackWidget extends WidgetCommon {
+  type: 'anchor_track'
+}
+
 export type Widget =
   | LabelWidget
   | ValueWidget
@@ -205,6 +216,7 @@ export type Widget =
   | ButtonWidget
   | NotificationsWidget
   | AnchorWidget
+  | AnchorTrackWidget
 
 export interface Screen {
   id: string
