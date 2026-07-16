@@ -40,10 +40,8 @@
       "name": "HMI Designer",
       "description": "Drag-and-drop layout designer for runtime-rendering HMI displays"
     },
-    "requires": [
-      "signalk-derived-data"
-    ],
     "recommends": [
+      "signalk-derived-data",
       "signalk-n2k-switching"
     ]
   },
