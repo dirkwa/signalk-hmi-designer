@@ -35,32 +35,53 @@ Toggle with the **WASM / Mirror** buttons above the canvas.
 
 ## Widget kinds
 
-| Kind             | Notes |
-|------------------|-------|
-| `label`          | Static or path-bound text. Falls back to SK `description` when bound. Optional `display.font_size`. |
-| `value`          | Big-number readout. Caption top-left, unit bottom-right. Zone-tinted background. Optional `display.font_size`. |
-| `toggle`         | Boolean state with SK PUT on tap. Visual follows SK echo, not optimistic. |
-| `arc`            | Gauge with min/max, advisory color bands (`bands`), optional `ticks` + `tick_labels`. Zone state colors the indicator. |
-| `bar`            | Linear gauge with min/max. Horizontal or `vertical: true`. |
-| `bargroup`       | Multiple labelled bars under one caption (e.g. SAIL TRIM / battery banks). Each sub-bar binds + zones independently. Signed ranges anchor at zero. |
-| `button`         | Momentary action button: `press_value` PUT on press, optional `release_value` on release, optional `hold_ms` for hold-to-act. Optional fixed `bg_color` / `fg_color`. |
-| `notifications`  | Scrolling list of pending notifications from `notifications.*`. State-tinted rows, configurable columns. Tap a row to ACK. |
+| Kind            | Notes                                                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`         | Static or path-bound text. Falls back to SK `description` when bound. Optional `display.font_size`.                                                                   |
+| `value`         | Big-number readout. Caption top-left, unit bottom-right. Zone-tinted background. Optional `display.font_size`.                                                        |
+| `toggle`        | Boolean state with SK PUT on tap. Visual follows SK echo, not optimistic.                                                                                             |
+| `arc`           | Gauge with min/max, advisory color bands (`bands`), optional `ticks` + `tick_labels`. Zone state colors the indicator.                                                |
+| `bar`           | Linear gauge with min/max. Horizontal or `vertical: true`.                                                                                                            |
+| `bargroup`      | Multiple labelled bars under one caption (e.g. SAIL TRIM / battery banks). Each sub-bar binds + zones independently. Signed ranges anchor at zero.                    |
+| `button`        | Momentary action button: `press_value` PUT on press, optional `release_value` on release, optional `hold_ms` for hold-to-act. Optional fixed `bg_color` / `fg_color`. |
+| `notifications` | Scrolling list of pending notifications from `notifications.*`. State-tinted rows, configurable columns. Tap a row to ACK.                                            |
 
 Common fields: `id`, `type`, `x`, `y`, `w`, `h`, `label`, `bind`, `display { unit, scale, offset, decimals, font_size }`, `bg_color`, `fg_color`.
 Per-kind extras live in [webapp/src/schema.ts](webapp/src/schema.ts).
 
 The designer refuses to push widget kinds the device's `/hello` doesn't list — newer designer with older firmware still works, with the unsupported kinds greyed out in the palette.
 
+### Control buttons
+
+To make a widget _do_ something on tap, use a **`button`** — a `label`
+or `value` only displays, it has no press action and so no press-value
+field in the inspector. A button PUTs its **press value** to its bound
+SK path on tap. Type `null` in the press-value field to PUT a JSON
+null.
+
+Worked example — the anchor controls for the
+[hoekens-anchor-alarm](https://github.com/hoeken/hoekens-anchor-alarm)
+plugin:
+
+| Button    | bind                          | press value | notes                                                                                |
+| --------- | ----------------------------- | ----------- | ------------------------------------------------------------------------------------ |
+| RAISE     | `navigation.anchor.position`  | `null`      | PUT null raises the anchor. A `hold_ms` (e.g. 800) guards against an accidental tap. |
+| CHAIN OUT | `navigation.anchor.maxRadius` | `30`        | metres of scope; add one button per preset (30 / 40 / 50 …).                         |
+
+RAISE and CHAIN OUT work against the published plugin as-is. (Dropping
+the anchor from a fixed-value button needs a plugin-side change so a
+button with no live position can drop at the current fix.)
+
 ## Device contract
 
 The designer assumes the device exposes (default port 8081 on the reference firmware):
 
-| Method | Endpoint        | Purpose                                                  |
-|--------|-----------------|----------------------------------------------------------|
-| GET    | `/hello`        | Capability descriptor (schema, widgets, display, active) |
-| POST   | `/layout`       | Apply a layout JSON; returns `{ok, name, screens, widgets}` or `{ok:false, err}` |
-| GET    | `/screenshot`   | Default JPEG, `?fmt=bmp` legacy RGB565 (used by Mirror preview) |
-| GET    | `/healthz`      | Liveness probe                                            |
+| Method | Endpoint      | Purpose                                                                          |
+| ------ | ------------- | -------------------------------------------------------------------------------- |
+| GET    | `/hello`      | Capability descriptor (schema, widgets, display, active)                         |
+| POST   | `/layout`     | Apply a layout JSON; returns `{ok, name, screens, widgets}` or `{ok:false, err}` |
+| GET    | `/screenshot` | Default JPEG, `?fmt=bmp` legacy RGB565 (used by Mirror preview)                  |
+| GET    | `/healthz`    | Liveness probe                                                                   |
 
 The full contract is documented in the firmware repo: [JLP-PROTOCOL.md](https://github.com/dirkwa/sensesp-p4-cockpit/blob/master/JLP-PROTOCOL.md).
 
@@ -68,12 +89,12 @@ The full contract is documented in the firmware repo: [JLP-PROTOCOL.md](https://
 
 Mounted under `/plugins/signalk-hmi-designer/`:
 
-| Method | Endpoint         | Purpose                                                   |
-|--------|------------------|-----------------------------------------------------------|
-| GET    | `/status`        | Liveness                                                  |
-| GET    | `/layout`        | Load the last layout saved on this SK server (404 if none) |
-| PUT    | `/layout`        | Atomic save (tmp+rename) of the current layout            |
-| POST   | `/device-proxy`  | Forward GET/POST to the device URL — bypasses CORS, enforces http(s) targets, supports binary responses (for `/screenshot`), 30 s upstream timeout |
+| Method | Endpoint        | Purpose                                                                                                                                                                                                                      |
+| ------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/status`       | Liveness                                                                                                                                                                                                                     |
+| GET    | `/layout`       | Load the last layout saved on this SK server (404 if none)                                                                                                                                                                   |
+| PUT    | `/layout`       | Atomic save (tmp+rename) of the current layout                                                                                                                                                                               |
+| POST   | `/device-proxy` | Forward GET/POST to the device URL — bypasses CORS, accepts only http(s) URL schemes (host is not validated; the SK server is expected to be on a LAN), supports binary responses (for `/screenshot`), 30 s upstream timeout |
 
 ## Develop
 
