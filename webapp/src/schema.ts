@@ -15,6 +15,7 @@ export type WidgetKind =
   | 'button'
   | 'notifications'
   | 'anchor'
+  | 'anchor_track'
 
 export interface DisplayConfig {
   unit?: string
@@ -195,6 +196,15 @@ export interface AnchorWidget extends WidgetCommon {
   type: 'anchor'
 }
 
+/** Anchor-swing plot. Distinct from the anchor dial because it uses the
+ *  true bearing, not the boat-relative one, so the swing stays fixed to
+ *  the ground and reflects real wind/current shifts. The tail is bounded
+ *  and load-relative (no SK History dependency), which keeps it cheap to
+ *  render live. */
+export interface AnchorTrackWidget extends WidgetCommon {
+  type: 'anchor_track'
+}
+
 export type Widget =
   | LabelWidget
   | ValueWidget
@@ -205,6 +215,7 @@ export type Widget =
   | ButtonWidget
   | NotificationsWidget
   | AnchorWidget
+  | AnchorTrackWidget
 
 export interface Screen {
   id: string

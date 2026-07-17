@@ -184,6 +184,16 @@ function defaultWidget(
         label: '',
         display: { unit: 'm', scale: 1, offset: 0, decimals: 1 }
       }
+    case 'anchor_track':
+      return {
+        ...base,
+        type: 'anchor_track',
+        // Square — the swing plot is drawn into min(w,h).
+        w: 240,
+        h: 240,
+        label: '',
+        display: { unit: 'm', scale: 1, offset: 0, decimals: 1 }
+      }
   }
 }
 
@@ -1173,7 +1183,8 @@ export function App(): React.JSX.Element {
         'bargroup',
         'button',
         'notifications',
-        'anchor'
+        'anchor',
+        'anchor_track'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1185,7 +1196,8 @@ export function App(): React.JSX.Element {
         k === 'bargroup' ||
         k === 'button' ||
         k === 'notifications' ||
-        k === 'anchor'
+        k === 'anchor' ||
+        k === 'anchor_track'
     )
   }, [hello])
 
