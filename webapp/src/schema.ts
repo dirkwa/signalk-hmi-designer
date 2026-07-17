@@ -196,12 +196,11 @@ export interface AnchorWidget extends WidgetCommon {
   type: 'anchor'
 }
 
-/** Anchor-swing plot, north up. Same navigation.anchor.* family as the
- *  anchor dial but plotted geographically (uses bearingTrue, not the
- *  boat-relative apparentBearing): the anchor at centre, the watch-zone
- *  ring, and the boat's recent track around it — a live "cycle" that
- *  fades with age. Live tail only (samples since load), not the whole
- *  session. `display` scales the centre distance text. */
+/** Anchor-swing plot. Distinct from the anchor dial because it uses the
+ *  true bearing, not the boat-relative one, so the swing stays fixed to
+ *  the ground and reflects real wind/current shifts. The tail is bounded
+ *  and load-relative (no SK History dependency), which keeps it cheap to
+ *  render live. */
 export interface AnchorTrackWidget extends WidgetCommon {
   type: 'anchor_track'
 }
