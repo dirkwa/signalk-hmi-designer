@@ -147,6 +147,37 @@ Array accesses can return `undefined`; guard with `const target =
 arr[i]; if (target) { ... }` rather than `arr[i]!`. Don't disable the
 check — it's caught real bugs already.
 
+## Licensing
+
+From **0.2.0** this project is source-available, not open source: use and
+modification are free, redistribution is not. `LICENSE.md` is authoritative.
+
+- **0.1.8 and earlier were Apache-2.0 and stay that way, permanently.**
+  Never rewrite history, retag old releases, or edit the license on an
+  existing tag. Apache-2.0's patent grant (§3) and redistribution rights
+  (§4) for those versions are irrevocable, and obscuring that weakens
+  the current license rather than strengthening it.
+- `LICENSE-APACHE-2.0-through-v0.1.8.txt` keeps that history
+  discoverable in the tarball. Do not delete it.
+- **Never propose returning to a permissive license** — that is the
+  copyright holder's decision alone.
+- `package.json` uses `"license": "SEE LICENSE IN LICENSE.md"`. This is
+  not an SPDX-listed license; inventing an identifier breaks tooling
+  validation.
+- `CONTRIBUTING.md` carries an inbound contribution grant. Without it,
+  merged contributions fragment ownership and make this kind of decision
+  impossible to take again.
+- The license text derives from a plain-language template whose authors
+  permit adaptation only if all mention of their project is removed. It
+  has been. Do not add attribution to them back in.
+- **Runtime dependency licenses gate this.** A copyleft or share-alike
+  runtime dependency would override the arrangement. The production tree
+  was audited at relicense time: 80 packages, all MIT/ISC/BSD/Apache-2.0.
+  Re-check before adding a runtime dependency — devDependencies do not
+  matter, since they are never distributed.
+- `signalk-derived-data` is a **peer** dependency (Apache-2.0), installed
+  by the user rather than bundled, so it imposes no constraint here.
+
 ## Repo conventions
 
 - **Build/test gate**: `npm run format && npm run build:all && npm run
