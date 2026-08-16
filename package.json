@@ -1,6 +1,6 @@
 {
   "name": "signalk-hmi-designer",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "description": "SignalK webapp that designs HMI layouts (JSON) for runtime-rendering display devices",
   "main": "plugin/index.js",
   "type": "module",
@@ -11,7 +11,7 @@
     },
     "./package.json": "./package.json"
   },
-  "license": "Apache-2.0",
+  "license": "SEE LICENSE IN LICENSE.md",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dirkwa/signalk-hmi-designer.git"
@@ -47,7 +47,9 @@
   },
   "files": [
     "plugin/**/*",
-    "public/**/*"
+    "public/**/*",
+    "LICENSE.md",
+    "LICENSE-APACHE-2.0-through-v0.1.8.txt"
   ],
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx,html}\"",

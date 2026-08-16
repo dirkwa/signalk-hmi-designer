@@ -117,3 +117,18 @@ v0.2 — daily-usable for layout iteration against the reference firmware. Open 
 - Map / chart widget.
 - AIS radar / polar plot widget.
 - `notifications` widget v2 — arbitrary array paths with filter + projection mini-language (today it's bound to the firmware's notifications registry).
+
+## License
+
+signalk-hmi-designer 0.2.0 and later is **source available, not open source**.
+See [LICENSE.md](LICENSE.md).
+
+**You may**, free of charge: run it on your own boat or fleet, private or
+commercial; use it for internal company operations; modify it for your own use;
+use it in education and research; and provide professional services around it.
+
+**You may not**: redistribute it, or publish a modified version of it to npm or
+anywhere else. Verbatim copies of official releases may be mirrored and cached.
+
+Versions 0.1.8 and earlier remain available under the Apache License 2.0 — see
+[LICENSE-APACHE-2.0-through-v0.1.8.txt](LICENSE-APACHE-2.0-through-v0.1.8.txt).
