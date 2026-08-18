@@ -70,7 +70,10 @@ const plugin = (app: ServerAPI): Plugin => {
       router.get('/devices', (_req: Request, res: Response) => {
         const bonjour = new Bonjour()
         const found = new Map<string, DiscoveredDevice>()
-        const browser = bonjour.find({ type: 'signalk-player', protocol: 'tcp' })
+        const browser = bonjour.find({
+          type: 'signalk-player',
+          protocol: 'tcp'
+        })
         browser.on('up', (svc) => {
           // Prefer the .local name: it survives a DHCP lease change,
           // whereas the address does not. Fall back to the first IPv4.
