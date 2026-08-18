@@ -324,13 +324,17 @@ export const DEFAULT_TAB_STRIP_HEIGHT = 56
 export const MIN_DEVICE_FIRMWARE = '0.1.0'
 
 /** Parse a firmware string like "p4-cockpit-jlp-0.1.0" into a
- *  semver-shape `{major, minor, patch}`. Returns null when the
- *  input doesn't end in `M.m.p`. */
+ *  semver-shape `{major, minor, patch}`. A pre-release/build suffix
+ *  ("2.0.0-dev", "1.2.3+g1a2b3c4") is accepted and ignored — the
+ *  numbers are what the gate compares, and treating a suffixed build
+ *  as "unknown version" makes the designer refuse to push to firmware
+ *  that is in fact newer than the minimum. Returns null only when
+ *  there is no `M.m.p` at all. */
 export function parseFirmwareVersion(
   s: string | undefined
 ): { major: number; minor: number; patch: number } | null {
   if (!s) return null
-  const m = /(\d+)\.(\d+)\.(\d+)\s*$/.exec(s)
+  const m = /(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]*)?\s*$/.exec(s)
   if (!m) return null
   const major = Number(m[1])
   const minor = Number(m[2])
