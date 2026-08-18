@@ -2,6 +2,14 @@ import type { Plugin, ServerAPI } from '@signalk/server-api'
 import type { Request, Response, IRouter } from 'express'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { Bonjour } from 'bonjour-service'
+
+/** A cockpit panel found on the LAN via mDNS. */
+interface DiscoveredDevice {
+  url: string
+  name: string
+  txt: Record<string, string>
+}
 
 const PLUGIN_ID = 'signalk-hmi-designer'
 const LAYOUT_FILE = 'layout.json'
@@ -54,6 +62,37 @@ const plugin = (app: ServerAPI): Plugin => {
     },
 
     registerWithRouter(router: IRouter) {
+      // Browse the LAN for cockpit panels so the webapp does not have to
+      // guess a hostname. Devices advertise `_signalk-player._tcp`;
+      // espOS names them per-MAC (espos-<mac4>), so no hardcoded default
+      // can be right and a typed URL goes stale the moment a panel is
+      // reflashed or replaced.
+      router.get('/devices', (_req: Request, res: Response) => {
+        const bonjour = new Bonjour()
+        const found = new Map<string, DiscoveredDevice>()
+        const browser = bonjour.find({ type: 'signalk-player', protocol: 'tcp' })
+        browser.on('up', (svc) => {
+          // Prefer the .local name: it survives a DHCP lease change,
+          // whereas the address does not. Fall back to the first IPv4.
+          const host: string | undefined =
+            svc.host ?? svc.addresses?.find((a: string) => a.includes('.'))
+          if (!host || !svc.port) return
+          const url = `http://${host.replace(/\.$/, '')}:${svc.port}`
+          found.set(url, {
+            url,
+            name: svc.name ?? host,
+            txt: (svc.txt ?? {}) as Record<string, string>
+          })
+        })
+        // mDNS is lossy and answers trickle in; give responders a moment,
+        // then return whatever answered rather than holding the request.
+        setTimeout(() => {
+          browser.stop()
+          bonjour.destroy()
+          res.json({ devices: [...found.values()] })
+        }, 1500)
+      })
+
       router.get('/status', (_req: Request, res: Response) => {
         res.json({ ok: true, plugin: PLUGIN_ID })
       })

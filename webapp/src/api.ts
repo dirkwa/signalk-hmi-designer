@@ -377,3 +377,27 @@ function walk(prefix: string, node: unknown, out: string[]): void {
     walk(next, v, out)
   }
 }
+
+/** A cockpit panel the plugin found on the LAN via mDNS. */
+export interface DiscoveredDevice {
+  url: string
+  name: string
+  txt: Record<string, string>
+}
+
+/** Ask the plugin to browse `_signalk-player._tcp`. The browse runs on
+ *  the SignalK server (which is on the boat LAN), not in the browser,
+ *  which cannot do mDNS. Takes ~1.5s while responders answer. */
+export async function fetchDevices(): Promise<DiscoveredDevice[]> {
+  const r = await fetch(`${PLUGIN_BASE}/devices`)
+  if (!r.ok) throw new Error(`device discovery failed: ${r.status}`)
+  const body: unknown = await r.json()
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !Array.isArray((body as { devices?: unknown }).devices)
+  ) {
+    throw new Error('device discovery returned an unexpected shape')
+  }
+  return (body as { devices: DiscoveredDevice[] }).devices
+}
