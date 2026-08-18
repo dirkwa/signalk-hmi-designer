@@ -341,12 +341,32 @@ function SortableTab(props: {
   )
 }
 
+/** Fallback when nothing has been saved yet. Devices announce
+ *  themselves as `_signalk-player._tcp` over mDNS; espOS names them
+ *  `espos-<last 4 hex of MAC>`, so there is no single correct default —
+ *  this is only a shape to edit, and the last working URL is remembered
+ *  below. */
+const DEFAULT_DEVICE_URL = 'http://espos-cockpit.local:8081'
+const DEVICE_URL_KEY = 'hmi-designer.deviceUrl'
+
 /* ---------- the app ---------- */
 
 export function App(): React.JSX.Element {
-  const [deviceUrl, setDeviceUrl] = useState<string>(
-    'http://p4-cockpit.local:8081'
-  )
+  // Remember the last device the user actually talked to. The old
+  // hardcoded default ("p4-cockpit.local") stopped resolving when the
+  // firmware moved to espOS, which derives the mDNS name from the MAC
+  // (espos-<mac4>.local) — so every reload put a dead address in the
+  // box and the connection failed until it was retyped by hand.
+  const [deviceUrl, setDeviceUrl] = useState<string>(() => {
+    try {
+      const saved = window.localStorage.getItem(DEVICE_URL_KEY)
+      if (saved) return saved
+    } catch {
+      // localStorage can throw in private mode / with cookies blocked;
+      // fall through to the default rather than failing to render.
+    }
+    return DEFAULT_DEVICE_URL
+  })
   const [hello, setHello] = useState<HelloResponse | null>(null)
   const [helloErr, setHelloErr] = useState<string | null>(null)
 
@@ -892,6 +912,13 @@ export function App(): React.JSX.Element {
     try {
       const h = await fetchHello(deviceUrl)
       setHello(h)
+      // Only remember a URL that actually answered, so a typo does not
+      // become the sticky default for every future session.
+      try {
+        window.localStorage.setItem(DEVICE_URL_KEY, deviceUrl)
+      } catch {
+        // non-fatal: the session still works, it just will not be remembered
+      }
     } catch (e) {
       setHelloErr(e instanceof Error ? e.message : String(e))
     }
@@ -1231,7 +1258,7 @@ export function App(): React.JSX.Element {
             className="topbar-url"
             value={deviceUrl}
             onChange={(e) => setDeviceUrl(e.target.value)}
-            placeholder="http://p4-cockpit.local:8081"
+            placeholder={DEFAULT_DEVICE_URL}
           />
           <button onClick={() => void onConnect()}>Connect</button>
           <button className="primary" onClick={() => void onPush()}>
