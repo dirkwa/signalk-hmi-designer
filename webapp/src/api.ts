@@ -230,6 +230,12 @@ export interface DisplayDefaults {
 
 /** Fetch metadata for a SK path. Returns null on 404 / non-200. */
 export async function fetchPathMeta(skPath: string): Promise<PathMeta | null> {
+  // Sentinel binds (`@drop_here`) are local device actions, not SignalK
+  // paths — the firmware resolves them itself. Asking the server for
+  // their metadata is guaranteed to 404 and litters the browser console
+  // on every layout load. Guarded here rather than at each call site so
+  // new callers cannot reintroduce it.
+  if (!skPath || skPath.startsWith('@')) return null
   const slashed = skPath.replace(/\./g, '/')
   const r = await fetch(`/signalk/v1/api/vessels/self/${slashed}/meta`)
   if (!r.ok) return null
