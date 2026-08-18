@@ -27,6 +27,7 @@ import {
   IDLE_DIM_PRESETS,
   IDLE_TIMEOUT_PRESETS,
   MIN_DEVICE_FIRMWARE,
+  parseFirmwareVersion,
   STATUS_OVERLAY_HEIGHT,
   firmwareMeets
 } from './schema'
@@ -1146,10 +1147,19 @@ export function App(): React.JSX.Element {
     // tends to leave the screen showing just the status overlay over
     // black after the next reboot.
     if (hello && !firmwareMeets(hello.firmware, MIN_DEVICE_FIRMWARE)) {
+      // Distinguish "too old" from "no version we can read": an
+      // unparseable string is a reporting bug on the device, not an
+      // outdated build, and saying "older than" sends people off to
+      // reflash firmware that may already be newer.
+      const parsed = parseFirmwareVersion(hello.firmware)
       setPushErr(
-        `Device firmware ${hello.firmware ?? '(unknown)'} is older than the ` +
-          `${MIN_DEVICE_FIRMWARE} this designer build requires. Flash the ` +
-          `latest sensesp-p4-cockpit release and try again.`
+        parsed
+          ? `Device firmware ${hello.firmware} is older than the ` +
+              `${MIN_DEVICE_FIRMWARE} this designer build requires. Flash a ` +
+              `newer release and try again.`
+          : `Cannot read a version from the device firmware string ` +
+              `${hello.firmware ?? '(none reported)'}. GET /hello must report ` +
+              `a firmware ending in MAJOR.MINOR.PATCH (a -suffix is fine).`
       )
       return
     }

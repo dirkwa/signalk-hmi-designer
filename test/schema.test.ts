@@ -45,12 +45,33 @@ describe('parseFirmwareVersion', () => {
     expect(parseFirmwareVersion(undefined)).toBeNull()
   })
 
+  it('accepts a pre-release or build suffix', () => {
+    // Regression: espos-p4-cockpit reported "p4-cockpit-jlp-2.0.0-dev",
+    // which the old end-anchored regex could not parse. The designer then
+    // reported it as "older than 0.1.0" and refused to push to firmware
+    // that was in fact far newer.
+    expect(parseFirmwareVersion('p4-cockpit-jlp-2.0.0-dev')).toEqual({
+      major: 2,
+      minor: 0,
+      patch: 0
+    })
+    expect(parseFirmwareVersion('p4-cockpit-jlp-1.2.3+g1a2b3c4')).toEqual({
+      major: 1,
+      minor: 2,
+      patch: 3
+    })
+  })
+
   it('returns null for an unparseable string', () => {
     expect(parseFirmwareVersion('garbage')).toBeNull()
   })
 })
 
 describe('firmwareMeets', () => {
+  it('lets a suffixed build satisfy the minimum', () => {
+    expect(firmwareMeets('p4-cockpit-jlp-2.0.0-dev', '0.1.0')).toBe(true)
+  })
+
   it('accepts an exact match', () => {
     expect(firmwareMeets('p4-cockpit-jlp-0.1.0', '0.1.0')).toBe(true)
   })
