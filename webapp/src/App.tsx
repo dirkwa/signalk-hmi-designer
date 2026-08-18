@@ -34,6 +34,7 @@ import {
 
 import {
   deriveDisplayDefaults,
+  fetchDevices,
   fetchHello,
   fetchPathMeta,
   fetchScreenshot,
@@ -41,6 +42,7 @@ import {
   loadSavedLayout,
   pushLayout,
   saveLayout,
+  type DiscoveredDevice,
   type MetaZone,
   type PushResult
 } from './api'
@@ -906,6 +908,33 @@ export function App(): React.JSX.Element {
     })
   }
 
+  /* ---- device discovery (mDNS, via the plugin) ---- */
+
+  const [devices, setDevices] = useState<DiscoveredDevice[] | null>(null)
+  const [scanning, setScanning] = useState(false)
+
+  const onScan = async (): Promise<void> => {
+    setScanning(true)
+    setHelloErr(null)
+    try {
+      const found = await fetchDevices()
+      setDevices(found)
+      // One panel on the LAN is the common case — select it outright
+      // rather than making the user pick from a list of one.
+      if (found.length === 1 && found[0]) setDeviceUrl(found[0].url)
+      if (found.length === 0) {
+        setHelloErr(
+          'No devices announced _signalk-player._tcp. Check the panel is ' +
+            'on the same network, or type its address.'
+        )
+      }
+    } catch (e) {
+      setHelloErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setScanning(false)
+    }
+  }
+
   const onConnect = async (): Promise<void> => {
     setHelloErr(null)
     setHello(null)
@@ -1256,10 +1285,25 @@ export function App(): React.JSX.Element {
           <input
             type="text"
             className="topbar-url"
+            list="discovered-devices"
             value={deviceUrl}
             onChange={(e) => setDeviceUrl(e.target.value)}
             placeholder={DEFAULT_DEVICE_URL}
           />
+          <datalist id="discovered-devices">
+            {(devices ?? []).map((d) => (
+              <option key={d.url} value={d.url}>
+                {d.name}
+              </option>
+            ))}
+          </datalist>
+          <button
+            onClick={() => void onScan()}
+            disabled={scanning}
+            title="Find cockpit panels on this network (mDNS)"
+          >
+            {scanning ? 'Scanning…' : 'Scan'}
+          </button>
           <button onClick={() => void onConnect()}>Connect</button>
           <button className="primary" onClick={() => void onPush()}>
             Push

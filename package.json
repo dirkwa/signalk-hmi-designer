@@ -70,6 +70,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@signalk/server-api": "*",
+    "bonjour-service": "^1.4.4",
     "express": "^5.2.1"
   },
   "peerDependencies": {
