@@ -5,7 +5,7 @@
 #
 # Source resolution, in order:
 #   1. JLP_WASM_DIR (explicit local override)
-#   2. ../sensesp-p4-cockpit-wasm/public (sibling checkout, local dev)
+#   2. ../espos-p4-cockpit-wasm/public (sibling checkout, local dev)
 #   3. raw.githubusercontent of the wasm repo's main branch (CI, where
 #      the sibling repo isn't checked out — without this the published
 #      package ships no wasm and the designer's WASM canvas 404s).
@@ -17,10 +17,10 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC_DEFAULT="${REPO_ROOT}/../sensesp-p4-cockpit-wasm/public"
+SRC_DEFAULT="${REPO_ROOT}/../espos-p4-cockpit-wasm/public"
 SRC="${JLP_WASM_DIR:-$SRC_DEFAULT}"
 DEST="${REPO_ROOT}/webapp/public/wasm"
-RAW_BASE="${JLP_WASM_URL:-https://raw.githubusercontent.com/dirkwa/sensesp-p4-cockpit-wasm/main/public}"
+RAW_BASE="${JLP_WASM_URL:-https://raw.githubusercontent.com/dirkwa/espos-p4-cockpit-wasm/main/public}"
 
 mkdir -p "${DEST}"
 
@@ -41,7 +41,7 @@ fi
 # Clean up any partial download so a broken bundle isn't served.
 rm -f "${DEST}/jlp_wasm.js" "${DEST}/jlp_wasm.wasm"
 echo "[copy-wasm] could not obtain wasm bundle — WASM preview will be unavailable" >&2
-echo "[copy-wasm] (build sensesp-p4-cockpit-wasm or check ${RAW_BASE})" >&2
+echo "[copy-wasm] (build espos-p4-cockpit-wasm or check ${RAW_BASE})" >&2
 # Fail loudly in CI / release so a package can't be published without the
 # wasm (the exact "blank WASM canvas" regression this fallback prevents).
 # Local dev stays soft so a missing bundle doesn't block a normal build.
