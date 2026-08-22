@@ -95,6 +95,9 @@ function freshId(
   throw new Error('genId exhausted (somehow)')
 }
 
+/** Kinds that drive the panel itself and never take a SignalK bind. */
+const PANEL_LOCAL_KINDS = new Set<WidgetKind>(['voice', 'speaker', 'mic', 'volume'])
+
 function defaultWidget(
   kind: WidgetKind,
   existing: ReadonlyArray<{ id: string }>
@@ -197,6 +200,17 @@ function defaultWidget(
         label: '',
         display: { unit: 'm', scale: 1, offset: 0, decimals: 1 }
       }
+    // The four voice widgets are panel-local: no bind, no SignalK. Sized like
+    // the switch tiles they resemble; the device supplies its own caption
+    // (TALK / SPEAKER / MIC / VOLUME) when label is empty.
+    case 'voice':
+      return { ...base, type: 'voice', w: 200, h: 100, label: '' }
+    case 'speaker':
+      return { ...base, type: 'speaker', w: 200, h: 100, label: '' }
+    case 'mic':
+      return { ...base, type: 'mic', w: 200, h: 100, label: '' }
+    case 'volume':
+      return { ...base, type: 'volume', w: 320, h: 100, label: '' }
   }
 }
 
@@ -1250,7 +1264,11 @@ export function App(): React.JSX.Element {
         'button',
         'notifications',
         'anchor',
-        'anchor_track'
+        'anchor_track',
+        'voice',
+        'speaker',
+        'mic',
+        'volume'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1263,7 +1281,11 @@ export function App(): React.JSX.Element {
         k === 'button' ||
         k === 'notifications' ||
         k === 'anchor' ||
-        k === 'anchor_track'
+        k === 'anchor_track' ||
+        k === 'voice' ||
+        k === 'speaker' ||
+        k === 'mic' ||
+        k === 'volume'
     )
   }, [hello])
 
@@ -1627,14 +1649,19 @@ export function App(): React.JSX.Element {
                   }
                 />
               </label>
-              <label>
-                bind (SK path)
-                <input
-                  value={selected.bind ?? ''}
-                  onFocus={() => setBindTarget('widget')}
-                  onChange={(e) => applyBind(selected.id, e.target.value)}
-                />
-              </label>
+              {/* The voice widgets are panel-local: the device ignores a
+                  bind on them, so offering the field would only invite a
+                  path that silently does nothing. */}
+              {!PANEL_LOCAL_KINDS.has(selected.type) && (
+                <label>
+                  bind (SK path)
+                  <input
+                    value={selected.bind ?? ''}
+                    onFocus={() => setBindTarget('widget')}
+                    onChange={(e) => applyBind(selected.id, e.target.value)}
+                  />
+                </label>
+              )}
               {(selected.type === 'arc' || selected.type === 'bar') && (
                 <>
                   <label>
