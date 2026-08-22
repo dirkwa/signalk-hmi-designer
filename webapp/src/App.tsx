@@ -96,7 +96,12 @@ function freshId(
 }
 
 /** Kinds that drive the panel itself and never take a SignalK bind. */
-const PANEL_LOCAL_KINDS = new Set<WidgetKind>(['voice', 'speaker', 'mic', 'volume'])
+const PANEL_LOCAL_KINDS = new Set<WidgetKind>([
+  'voice',
+  'speaker',
+  'mic',
+  'volume'
+])
 
 function defaultWidget(
   kind: WidgetKind,
