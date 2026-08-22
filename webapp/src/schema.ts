@@ -16,6 +16,10 @@ export type WidgetKind =
   | 'notifications'
   | 'anchor'
   | 'anchor_track'
+  | 'voice'
+  | 'speaker'
+  | 'mic'
+  | 'volume'
 
 export interface DisplayConfig {
   unit?: string
@@ -205,6 +209,26 @@ export interface AnchorTrackWidget extends WidgetCommon {
   type: 'anchor_track'
 }
 
+/** Push-to-talk. Press and hold to stream the mic; release to send. */
+export interface VoiceWidget extends WidgetCommon {
+  type: 'voice'
+}
+
+/** Panel speaker switch. ON = you hear things, OFF = silent. Defaults ON. */
+export interface SpeakerWidget extends WidgetCommon {
+  type: 'speaker'
+}
+
+/** Mic switch / privacy control. ON = mic live, OFF = never streams. */
+export interface MicWidget extends WidgetCommon {
+  type: 'mic'
+}
+
+/** Speaker volume slider, 0-100, applied at the codec. */
+export interface VolumeWidget extends WidgetCommon {
+  type: 'volume'
+}
+
 export type Widget =
   | LabelWidget
   | ValueWidget
@@ -216,6 +240,10 @@ export type Widget =
   | NotificationsWidget
   | AnchorWidget
   | AnchorTrackWidget
+  | VoiceWidget
+  | SpeakerWidget
+  | MicWidget
+  | VolumeWidget
 
 export interface Screen {
   id: string
