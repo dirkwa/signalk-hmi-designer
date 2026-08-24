@@ -20,6 +20,7 @@ export type WidgetKind =
   | 'speaker'
   | 'mic'
   | 'volume'
+  | 'slider'
 
 export interface DisplayConfig {
   unit?: string
@@ -229,6 +230,19 @@ export interface VolumeWidget extends WidgetCommon {
   type: 'volume'
 }
 
+/** Draggable slider bound to a SignalK path, PUT on change — the `volume`
+ *  tile's look and feel, but for an arbitrary bound value instead of the
+ *  panel's own audio codec. `display.scale`/`offset` cover a path reported
+ *  as a 0-1 ratio rather than 0-100 (e.g. set `scale: 100` so the slider's
+ *  0-100 UI range maps onto the path's 0-1 range). */
+export interface SliderWidget extends WidgetCommon {
+  type: 'slider'
+  bind: string
+  min: number
+  max: number
+  display?: DisplayConfig
+}
+
 export type Widget =
   | LabelWidget
   | ValueWidget
@@ -244,6 +258,7 @@ export type Widget =
   | SpeakerWidget
   | MicWidget
   | VolumeWidget
+  | SliderWidget
 
 export interface Screen {
   id: string
