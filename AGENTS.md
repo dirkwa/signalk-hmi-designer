@@ -112,9 +112,10 @@ For widgets that bind **multiple** SK paths (`bargroup`, `list`):
   `displayUnits.formula` (`value`, `value - N`, `value + N`, `value *
   N`, `value / N`) into `{unit, scale, offset, decimals}`. Use it to
   prefill the inspector when the user picks a path.
-- A label widget bound to a SK path **prefers `description` over the
-  formatted value**, matching firmware behaviour. So a switch state
-  bind shows "BMS DnC" instead of "1.0".
+- A label widget bound to a SK path shows the formatted live value by
+  default, matching firmware behaviour. Set `show_description` to
+  prefer the SK meta `description` instead (e.g. a switch state bind
+  reads "BMS DnC" rather than "1.0").
 
 ## Build / dev workflow
 

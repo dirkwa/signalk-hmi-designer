@@ -5,6 +5,7 @@ import {
   parseFirmwareVersion,
   type AnchorWidget,
   type ButtonWidget,
+  type LabelWidget,
   type Widget,
   type WidgetKind
 } from '../webapp/src/schema'
@@ -121,6 +122,38 @@ describe('anchor widget', () => {
     // Anchor owns a fixed navigation.anchor.* family, so it carries no
     // user `bind`.
     expect('bind' in w).toBe(false)
+  })
+})
+
+describe('label widget', () => {
+  it('show_description defaults to unset (value shown by default)', () => {
+    const w: LabelWidget = {
+      type: 'label',
+      id: 'l1',
+      x: 0,
+      y: 0,
+      w: 240,
+      h: 100,
+      bind: 'electrical.switches.bmsDnc.state'
+    }
+    const asWidget: Widget = w
+    expect(asWidget.type).toBe('label')
+    expect(w.show_description).toBeUndefined()
+  })
+
+  it('show_description opts back into the description-preferred behaviour', () => {
+    const w: LabelWidget = {
+      type: 'label',
+      id: 'l2',
+      x: 0,
+      y: 0,
+      w: 240,
+      h: 100,
+      bind: 'electrical.switches.bmsDnc.state',
+      show_description: true
+    }
+    const round = JSON.parse(JSON.stringify(w))
+    expect(round.show_description).toBe(true)
   })
 })
 

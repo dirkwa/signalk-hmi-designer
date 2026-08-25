@@ -184,8 +184,8 @@ const pushAllValues = (
       }
       // strings: not yet supported in the wasm bridge (the firmware
       // has SubjectKind::String but none of the v0.2 widgets read
-      // it; label widgets prefer the SK description over the
-      // formatted value anyway, via pathDescriptions).
+      // it; a `show_description` label reads the description via
+      // pathDescriptions instead of a string subject).
     })
   }
 }
