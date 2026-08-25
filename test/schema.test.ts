@@ -5,6 +5,7 @@ import {
   parseFirmwareVersion,
   type AnchorWidget,
   type ButtonWidget,
+  type SliderWidget,
   type Widget,
   type WidgetKind
 } from '../webapp/src/schema'
@@ -121,6 +122,32 @@ describe('anchor widget', () => {
     // Anchor owns a fixed navigation.anchor.* family, so it carries no
     // user `bind`.
     expect('bind' in w).toBe(false)
+  })
+})
+
+describe('slider widget', () => {
+  it("'slider' is a WidgetKind, a SliderWidget is a Widget, has bind (unlike volume)", () => {
+    const kind: WidgetKind = 'slider'
+    const w: SliderWidget = {
+      type: 'slider',
+      id: 's1',
+      x: 0,
+      y: 0,
+      w: 320,
+      h: 100,
+      bind: 'electrical.batteries.house.stateOfCharge',
+      min: 0,
+      max: 100,
+      // A 0-1 ratio path mapped onto the slider's 0-100 UI range.
+      display: { scale: 100 }
+    }
+    const asWidget: Widget = w
+    expect(kind).toBe('slider')
+    expect(asWidget.type).toBe('slider')
+    expect('bind' in w).toBe(true)
+    // Round-trips through JSON.
+    const round = JSON.parse(JSON.stringify(w))
+    expect(round).toEqual(w)
   })
 })
 

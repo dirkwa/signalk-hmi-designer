@@ -216,6 +216,18 @@ function defaultWidget(
       return { ...base, type: 'mic', w: 200, h: 100, label: '' }
     case 'volume':
       return { ...base, type: 'volume', w: 320, h: 100, label: '' }
+    case 'slider':
+      return {
+        ...base,
+        type: 'slider',
+        w: 320,
+        h: 100,
+        label: '',
+        bind: '',
+        min: 0,
+        max: 100,
+        display: { unit: '', scale: 1, offset: 0, decimals: 0 }
+      }
   }
 }
 
@@ -903,6 +915,7 @@ export function App(): React.JSX.Element {
             w.type !== 'value' &&
             w.type !== 'arc' &&
             w.type !== 'bar' &&
+            w.type !== 'slider' &&
             w.type !== 'button'
           ) {
             return w
@@ -1103,6 +1116,7 @@ export function App(): React.JSX.Element {
                     wid.type !== 'value' &&
                     wid.type !== 'arc' &&
                     wid.type !== 'bar' &&
+                    wid.type !== 'slider' &&
                     wid.type !== 'button'
                   ) {
                     return wid
@@ -1273,7 +1287,8 @@ export function App(): React.JSX.Element {
         'voice',
         'speaker',
         'mic',
-        'volume'
+        'volume',
+        'slider'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1290,7 +1305,8 @@ export function App(): React.JSX.Element {
         k === 'voice' ||
         k === 'speaker' ||
         k === 'mic' ||
-        k === 'volume'
+        k === 'volume' ||
+        k === 'slider'
     )
   }, [hello])
 
@@ -1667,7 +1683,9 @@ export function App(): React.JSX.Element {
                   />
                 </label>
               )}
-              {(selected.type === 'arc' || selected.type === 'bar') && (
+              {(selected.type === 'arc' ||
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     min
@@ -2101,7 +2119,8 @@ export function App(): React.JSX.Element {
               {(selected.type === 'label' ||
                 selected.type === 'value' ||
                 selected.type === 'arc' ||
-                selected.type === 'bar') && (
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     unit
