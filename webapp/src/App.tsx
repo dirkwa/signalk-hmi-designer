@@ -456,8 +456,9 @@ export function App(): React.JSX.Element {
   const [pathZones, setPathZones] = useState<Map<string, MetaZone[]>>(
     () => new Map()
   )
-  // SK meta `description` per bound path; LabelPreview prefers this
-  // over the formatted value (matches firmware behaviour).
+  // SK meta `description` per bound path; a label widget shows this
+  // instead of the formatted value when `show_description` is set
+  // (matches firmware behaviour).
   const [pathDescriptions, setPathDescriptions] = useState<Map<string, string>>(
     () => new Map()
   )
@@ -1664,6 +1665,20 @@ export function App(): React.JSX.Element {
                     value={selected.bind ?? ''}
                     onFocus={() => setBindTarget('widget')}
                     onChange={(e) => applyBind(selected.id, e.target.value)}
+                  />
+                </label>
+              )}
+              {selected.type === 'label' && (
+                <label>
+                  show description
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selected.show_description)}
+                    onChange={(e) =>
+                      updateWidget(selected.id, {
+                        show_description: e.target.checked || undefined
+                      })
+                    }
                   />
                 </label>
               )}

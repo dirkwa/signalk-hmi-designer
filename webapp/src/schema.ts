@@ -56,6 +56,11 @@ export interface WidgetCommon {
 
 export interface LabelWidget extends WidgetCommon {
   type: 'label'
+  /** When bound, a label shows the formatted live value by default
+   *  (matching `value`). Set true to show the SK meta `description`
+   *  instead (e.g. a switch-state bind reads "BMS DnC" rather than
+   *  "1.0"). */
+  show_description?: boolean
 }
 
 /** Big-number readout tile. Always shows the formatted live value
