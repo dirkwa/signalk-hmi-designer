@@ -1710,6 +1710,20 @@ export function App(): React.JSX.Element {
                   </label>
                 </>
               )}
+              {selected.type === 'bar' && (
+                <label>
+                  vertical
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selected.vertical)}
+                    onChange={(e) =>
+                      updateWidget(selected.id, {
+                        vertical: e.target.checked || undefined
+                      })
+                    }
+                  />
+                </label>
+              )}
               {selected.type === 'arc' && (
                 <>
                   <label>
