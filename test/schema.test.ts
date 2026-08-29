@@ -6,6 +6,7 @@ import {
   type AnchorWidget,
   type ButtonWidget,
   type LabelWidget,
+  type StreamWidget,
   type Widget,
   type WidgetKind
 } from '../webapp/src/schema'
@@ -122,6 +123,37 @@ describe('anchor widget', () => {
     // Anchor owns a fixed navigation.anchor.* family, so it carries no
     // user `bind`.
     expect('bind' in w).toBe(false)
+  })
+
+  it("'stream' round-trips with only advertised fields", () => {
+    const kind: WidgetKind = 'stream'
+    const w: StreamWidget = {
+      type: 'stream',
+      id: 's1',
+      x: 0,
+      y: 0,
+      w: 1024,
+      h: 544,
+      port: 5004,
+      touch: true,
+      touch_port: 5005
+    }
+    const asWidget: Widget = w
+    expect(kind).toBe('stream')
+    // The device's /hello field list for stream has no label/display/bind
+    // and the firmware rejects unadvertised fields — StreamWidget keeps
+    // them type-invalid, so writing them is a compile error, not just a
+    // runtime omission.
+    // @ts-expect-error label is not an advertised stream field
+    const withLabel: StreamWidget = { ...w, label: 'nope' }
+    // @ts-expect-error bind is not an advertised stream field
+    const withBind: StreamWidget = { ...w, bind: 'nope' }
+    // @ts-expect-error display is not an advertised stream field
+    const withDisplay: StreamWidget = { ...w, display: {} }
+    expect(withLabel.type).toBe('stream')
+    expect(withBind.type).toBe('stream')
+    expect(withDisplay.type).toBe('stream')
+    expect(asWidget.type).toBe('stream')
   })
 })
 

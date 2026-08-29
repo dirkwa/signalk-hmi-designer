@@ -100,12 +100,15 @@ const PANEL_LOCAL_KINDS = new Set<WidgetKind>([
   'voice',
   'speaker',
   'mic',
-  'volume'
+  'volume',
+  'stream'
 ])
 
 function defaultWidget(
   kind: WidgetKind,
-  existing: ReadonlyArray<{ id: string }>
+  existing: ReadonlyArray<{ id: string }>,
+  displayW: number = DEFAULT_DISPLAY_W,
+  displayH: number = DEFAULT_DISPLAY_H
 ): Widget {
   const id = freshId(kind, existing)
   const base = {
@@ -216,6 +219,20 @@ function defaultWidget(
       return { ...base, type: 'mic', w: 200, h: 100, label: '' }
     case 'volume':
       return { ...base, type: 'volume', w: 320, h: 100, label: '' }
+    case 'stream':
+      // Deliberately NOT ...base: the device's field list for stream has
+      // no label, and the firmware rejects unadvertised fields. Default
+      // to the connected panel's full screen minus the tab-strip row —
+      // the capture is panel-sized and frames render unscaled, so
+      // anything smaller crops.
+      return {
+        id,
+        type: 'stream',
+        x: 0,
+        y: 0,
+        w: displayW,
+        h: displayH - DEFAULT_TAB_STRIP_HEIGHT
+      }
   }
 }
 
@@ -782,7 +799,7 @@ export function App(): React.JSX.Element {
     // Pick a fresh id based on the *current* set so we don't collide
     // with anything already in the layout (e.g. loaded from server).
     setScreen((prev) => {
-      const w = defaultWidget(kind, prev.widgets)
+      const w = defaultWidget(kind, prev.widgets, displayW, displayH)
       setSelectedId(w.id)
       return { ...prev, widgets: [...prev.widgets, w] }
     })
@@ -1274,7 +1291,8 @@ export function App(): React.JSX.Element {
         'voice',
         'speaker',
         'mic',
-        'volume'
+        'volume',
+        'stream'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1291,7 +1309,8 @@ export function App(): React.JSX.Element {
         k === 'voice' ||
         k === 'speaker' ||
         k === 'mic' ||
-        k === 'volume'
+        k === 'volume' ||
+        k === 'stream'
     )
   }, [hello])
 
@@ -1646,28 +1665,35 @@ export function App(): React.JSX.Element {
                 id
                 <input value={selected.id} readOnly />
               </label>
-              <label>
-                label
-                <input
-                  value={selected.label ?? ''}
-                  onChange={(e) =>
-                    updateWidget(selected.id, { label: e.target.value })
-                  }
-                />
-              </label>
-              {/* The voice widgets are panel-local: the device ignores a
-                  bind on them, so offering the field would only invite a
-                  path that silently does nothing. */}
-              {!PANEL_LOCAL_KINDS.has(selected.type) && (
+              {/* stream carries no label at all — the device's /hello field
+                  list doesn't advertise it, the firmware rejects it, and
+                  StreamWidget keeps it type-invalid. The !== check (not the
+                  Set) is what narrows the union for TypeScript. */}
+              {selected.type !== 'stream' && (
                 <label>
-                  bind (SK path)
+                  label
                   <input
-                    value={selected.bind ?? ''}
-                    onFocus={() => setBindTarget('widget')}
-                    onChange={(e) => applyBind(selected.id, e.target.value)}
+                    value={selected.label ?? ''}
+                    onChange={(e) =>
+                      updateWidget(selected.id, { label: e.target.value })
+                    }
                   />
                 </label>
               )}
+              {/* The voice widgets are panel-local: the device ignores a
+                  bind on them, so offering the field would only invite a
+                  path that silently does nothing. */}
+              {selected.type !== 'stream' &&
+                !PANEL_LOCAL_KINDS.has(selected.type) && (
+                  <label>
+                    bind (SK path)
+                    <input
+                      value={selected.bind ?? ''}
+                      onFocus={() => setBindTarget('widget')}
+                      onChange={(e) => applyBind(selected.id, e.target.value)}
+                    />
+                  </label>
+                )}
               {selected.type === 'label' && (
                 <label>
                   show description
@@ -2124,6 +2150,77 @@ export function App(): React.JSX.Element {
                     press, PUT on release). Without, it's a one-shot action.
                     hold_ms requires sustained press before any PUT fires —
                     safety latch for STOP, etc.
+                  </div>
+                </>
+              )}
+              {selected.type === 'stream' && (
+                <>
+                  <label>
+                    host
+                    <input
+                      type="text"
+                      value={selected.host ?? ''}
+                      placeholder="(SignalK server)"
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          host: e.target.value || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={selected.port ?? 5004}
+                      onChange={(e) => {
+                        // max= only marks the input invalid; enforce the
+                        // range here so an out-of-range or fractional port
+                        // never reaches the serialized layout.
+                        const n = Number(e.target.value)
+                        if (!Number.isInteger(n) || n < 1 || n > 65535) return
+                        updateWidget(selected.id, {
+                          port: n !== 5004 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <label>
+                    forward touches
+                    <input
+                      type="checkbox"
+                      checked={selected.touch ?? true}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          touch: e.target.checked ? undefined : false
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    touch port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={selected.touch_port ?? 5005}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        if (!Number.isInteger(n) || n < 1 || n > 65535) return
+                        updateWidget(selected.id, {
+                          touch_port: n !== 5005 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <div className="muted small">
+                    Live MJPEG remote view captured on the SignalK box
+                    (signalk-esp32-stream); taps on the panel drive the captured
+                    page. Streams only while its screen is visible. Empty host
+                    follows the panel's SignalK server. Renders on the panel
+                    only — the preview shows a placeholder.
                   </div>
                 </>
               )}
