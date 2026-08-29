@@ -141,12 +141,18 @@ describe('anchor widget', () => {
     const asWidget: Widget = w
     expect(kind).toBe('stream')
     // The device's /hello field list for stream has no label/display/bind
-    // and the firmware rejects unadvertised fields — the serialized shape
-    // must stay clean of them.
-    const parsed = JSON.parse(JSON.stringify(w)) as Record<string, unknown>
-    expect('label' in parsed).toBe(false)
-    expect('display' in parsed).toBe(false)
-    expect('bind' in parsed).toBe(false)
+    // and the firmware rejects unadvertised fields — StreamWidget keeps
+    // them type-invalid, so writing them is a compile error, not just a
+    // runtime omission.
+    // @ts-expect-error label is not an advertised stream field
+    const withLabel: StreamWidget = { ...w, label: 'nope' }
+    // @ts-expect-error bind is not an advertised stream field
+    const withBind: StreamWidget = { ...w, bind: 'nope' }
+    // @ts-expect-error display is not an advertised stream field
+    const withDisplay: StreamWidget = { ...w, display: {} }
+    expect(withLabel.type).toBe('stream')
+    expect(withBind.type).toBe('stream')
+    expect(withDisplay.type).toBe('stream')
     expect(asWidget.type).toBe('stream')
   })
 })

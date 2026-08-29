@@ -233,6 +233,8 @@ export interface MicWidget extends WidgetCommon {
 /** Speaker volume slider, 0-100, applied at the codec. */
 export interface VolumeWidget extends WidgetCommon {
   type: 'volume'
+}
+
 /** Live MJPEG remote view: the SignalK box captures a webapp (Freeboard,
  *  KIP, Grafana) with Xvfb + Chromium + ffmpeg (signalk-esp32-stream) and
  *  the panel shows it, forwarding touches back — ACK-paced so at most one
@@ -241,8 +243,21 @@ export interface VolumeWidget extends WidgetCommon {
  *  this kind and rejects unadvertised fields). Panel-only: the designer
  *  preview substitutes a placeholder. Size it full-screen on its own
  *  screen — the capture is panel-sized and frames are shown unscaled. */
-export interface StreamWidget extends WidgetCommon {
+export interface StreamWidget {
+  // Deliberately NOT extending WidgetCommon: the device's /hello field
+  // list for stream has no label/bind/display and the firmware rejects
+  // unadvertised fields — keeping them type-invalid stops the generic
+  // inspector (and future code) from ever writing them onto this kind.
   type: 'stream'
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Letterbox/background color; see WidgetCommon.bg_color. */
+  bg_color?: string
+  /** Status-caption color; see WidgetCommon.fg_color. */
+  fg_color?: string
   /** Stream server; empty/omitted = the SignalK server the panel uses. */
   host?: string
   /** MJPEG TCP port (device default 5004). */

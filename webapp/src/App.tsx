@@ -100,7 +100,8 @@ const PANEL_LOCAL_KINDS = new Set<WidgetKind>([
   'voice',
   'speaker',
   'mic',
-  'volume'
+  'volume',
+  'stream'
 ])
 
 function defaultWidget(
@@ -1661,28 +1662,35 @@ export function App(): React.JSX.Element {
                 id
                 <input value={selected.id} readOnly />
               </label>
-              <label>
-                label
-                <input
-                  value={selected.label ?? ''}
-                  onChange={(e) =>
-                    updateWidget(selected.id, { label: e.target.value })
-                  }
-                />
-              </label>
-              {/* The voice widgets are panel-local: the device ignores a
-                  bind on them, so offering the field would only invite a
-                  path that silently does nothing. */}
-              {!PANEL_LOCAL_KINDS.has(selected.type) && (
+              {/* stream carries no label at all — the device's /hello field
+                  list doesn't advertise it, the firmware rejects it, and
+                  StreamWidget keeps it type-invalid. The !== check (not the
+                  Set) is what narrows the union for TypeScript. */}
+              {selected.type !== 'stream' && (
                 <label>
-                  bind (SK path)
+                  label
                   <input
-                    value={selected.bind ?? ''}
-                    onFocus={() => setBindTarget('widget')}
-                    onChange={(e) => applyBind(selected.id, e.target.value)}
+                    value={selected.label ?? ''}
+                    onChange={(e) =>
+                      updateWidget(selected.id, { label: e.target.value })
+                    }
                   />
                 </label>
               )}
+              {/* The voice widgets are panel-local: the device ignores a
+                  bind on them, so offering the field would only invite a
+                  path that silently does nothing. */}
+              {selected.type !== 'stream' &&
+                !PANEL_LOCAL_KINDS.has(selected.type) && (
+                  <label>
+                    bind (SK path)
+                    <input
+                      value={selected.bind ?? ''}
+                      onFocus={() => setBindTarget('widget')}
+                      onChange={(e) => applyBind(selected.id, e.target.value)}
+                    />
+                  </label>
+                )}
               {selected.type === 'label' && (
                 <label>
                   show description
@@ -2165,9 +2173,13 @@ export function App(): React.JSX.Element {
                       max={65535}
                       value={selected.port ?? 5004}
                       onChange={(e) => {
+                        // max= only marks the input invalid; enforce the
+                        // range here so an out-of-range or fractional port
+                        // never reaches the serialized layout.
                         const n = Number(e.target.value)
+                        if (!Number.isInteger(n) || n < 1 || n > 65535) return
                         updateWidget(selected.id, {
-                          port: n > 0 && n !== 5004 ? n : undefined
+                          port: n !== 5004 ? n : undefined
                         })
                       }}
                     />
@@ -2193,8 +2205,9 @@ export function App(): React.JSX.Element {
                       value={selected.touch_port ?? 5005}
                       onChange={(e) => {
                         const n = Number(e.target.value)
+                        if (!Number.isInteger(n) || n < 1 || n > 65535) return
                         updateWidget(selected.id, {
-                          touch_port: n > 0 && n !== 5005 ? n : undefined
+                          touch_port: n !== 5005 ? n : undefined
                         })
                       }}
                     />
