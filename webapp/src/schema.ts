@@ -20,6 +20,7 @@ export type WidgetKind =
   | 'speaker'
   | 'mic'
   | 'volume'
+  | 'stream'
 
 export interface DisplayConfig {
   unit?: string
@@ -232,6 +233,24 @@ export interface MicWidget extends WidgetCommon {
 /** Speaker volume slider, 0-100, applied at the codec. */
 export interface VolumeWidget extends WidgetCommon {
   type: 'volume'
+/** Live MJPEG remote view: the SignalK box captures a webapp (Freeboard,
+ *  KIP, Grafana) with Xvfb + Chromium + ffmpeg (signalk-esp32-stream) and
+ *  the panel shows it, forwarding touches back — ACK-paced so at most one
+ *  frame is in flight. Streams only while its screen is visible. No
+ *  `bind`, no `label`/`display` (the device does not advertise them for
+ *  this kind and rejects unadvertised fields). Panel-only: the designer
+ *  preview substitutes a placeholder. Size it full-screen on its own
+ *  screen — the capture is panel-sized and frames are shown unscaled. */
+export interface StreamWidget extends WidgetCommon {
+  type: 'stream'
+  /** Stream server; empty/omitted = the SignalK server the panel uses. */
+  host?: string
+  /** MJPEG TCP port (device default 5004). */
+  port?: number
+  /** Forward touches to the capture (device default true). */
+  touch?: boolean
+  /** UDP touch port (device default 5005). */
+  touch_port?: number
 }
 
 export type Widget =
@@ -249,6 +268,7 @@ export type Widget =
   | SpeakerWidget
   | MicWidget
   | VolumeWidget
+  | StreamWidget
 
 export interface Screen {
   id: string

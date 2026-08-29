@@ -6,6 +6,7 @@ import {
   type AnchorWidget,
   type ButtonWidget,
   type LabelWidget,
+  type StreamWidget,
   type Widget,
   type WidgetKind
 } from '../webapp/src/schema'
@@ -122,6 +123,31 @@ describe('anchor widget', () => {
     // Anchor owns a fixed navigation.anchor.* family, so it carries no
     // user `bind`.
     expect('bind' in w).toBe(false)
+  })
+
+  it("'stream' round-trips with only advertised fields", () => {
+    const kind: WidgetKind = 'stream'
+    const w: StreamWidget = {
+      type: 'stream',
+      id: 's1',
+      x: 0,
+      y: 0,
+      w: 1024,
+      h: 544,
+      port: 5004,
+      touch: true,
+      touch_port: 5005
+    }
+    const asWidget: Widget = w
+    expect(kind).toBe('stream')
+    // The device's /hello field list for stream has no label/display/bind
+    // and the firmware rejects unadvertised fields — the serialized shape
+    // must stay clean of them.
+    const parsed = JSON.parse(JSON.stringify(w)) as Record<string, unknown>
+    expect('label' in parsed).toBe(false)
+    expect('display' in parsed).toBe(false)
+    expect('bind' in parsed).toBe(false)
+    expect(asWidget.type).toBe('stream')
   })
 })
 

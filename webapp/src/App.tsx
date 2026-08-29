@@ -216,6 +216,19 @@ function defaultWidget(
       return { ...base, type: 'mic', w: 200, h: 100, label: '' }
     case 'volume':
       return { ...base, type: 'volume', w: 320, h: 100, label: '' }
+    case 'stream':
+      // Deliberately NOT ...base: the device's field list for stream has
+      // no label, and the firmware rejects unadvertised fields. Default
+      // to full-screen minus the tab strip — the capture is panel-sized
+      // and frames render unscaled, so anything smaller crops.
+      return {
+        id,
+        type: 'stream',
+        x: 0,
+        y: 0,
+        w: 1024,
+        h: 544
+      }
   }
 }
 
@@ -1274,7 +1287,8 @@ export function App(): React.JSX.Element {
         'voice',
         'speaker',
         'mic',
-        'volume'
+        'volume',
+        'stream'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1291,7 +1305,8 @@ export function App(): React.JSX.Element {
         k === 'voice' ||
         k === 'speaker' ||
         k === 'mic' ||
-        k === 'volume'
+        k === 'volume' ||
+        k === 'stream'
     )
   }, [hello])
 
@@ -2124,6 +2139,72 @@ export function App(): React.JSX.Element {
                     press, PUT on release). Without, it's a one-shot action.
                     hold_ms requires sustained press before any PUT fires —
                     safety latch for STOP, etc.
+                  </div>
+                </>
+              )}
+              {selected.type === 'stream' && (
+                <>
+                  <label>
+                    host
+                    <input
+                      type="text"
+                      value={selected.host ?? ''}
+                      placeholder="(SignalK server)"
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          host: e.target.value || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={selected.port ?? 5004}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        updateWidget(selected.id, {
+                          port: n > 0 && n !== 5004 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <label>
+                    forward touches
+                    <input
+                      type="checkbox"
+                      checked={selected.touch ?? true}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          touch: e.target.checked ? undefined : false
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    touch port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={selected.touch_port ?? 5005}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        updateWidget(selected.id, {
+                          touch_port: n > 0 && n !== 5005 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <div className="muted small">
+                    Live MJPEG remote view captured on the SignalK box
+                    (signalk-esp32-stream); taps on the panel drive the captured
+                    page. Streams only while its screen is visible. Empty host
+                    follows the panel's SignalK server. Renders on the panel
+                    only — the preview shows a placeholder.
                   </div>
                 </>
               )}
