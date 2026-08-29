@@ -106,7 +106,9 @@ const PANEL_LOCAL_KINDS = new Set<WidgetKind>([
 
 function defaultWidget(
   kind: WidgetKind,
-  existing: ReadonlyArray<{ id: string }>
+  existing: ReadonlyArray<{ id: string }>,
+  displayW: number = DEFAULT_DISPLAY_W,
+  displayH: number = DEFAULT_DISPLAY_H
 ): Widget {
   const id = freshId(kind, existing)
   const base = {
@@ -220,15 +222,16 @@ function defaultWidget(
     case 'stream':
       // Deliberately NOT ...base: the device's field list for stream has
       // no label, and the firmware rejects unadvertised fields. Default
-      // to full-screen minus the tab strip — the capture is panel-sized
-      // and frames render unscaled, so anything smaller crops.
+      // to the connected panel's full screen minus the tab-strip row —
+      // the capture is panel-sized and frames render unscaled, so
+      // anything smaller crops.
       return {
         id,
         type: 'stream',
         x: 0,
         y: 0,
-        w: 1024,
-        h: 544
+        w: displayW,
+        h: displayH - DEFAULT_TAB_STRIP_HEIGHT
       }
   }
 }
@@ -796,7 +799,7 @@ export function App(): React.JSX.Element {
     // Pick a fresh id based on the *current* set so we don't collide
     // with anything already in the layout (e.g. loaded from server).
     setScreen((prev) => {
-      const w = defaultWidget(kind, prev.widgets)
+      const w = defaultWidget(kind, prev.widgets, displayW, displayH)
       setSelectedId(w.id)
       return { ...prev, widgets: [...prev.widgets, w] }
     })
