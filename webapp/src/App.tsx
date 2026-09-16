@@ -414,6 +414,12 @@ export function App(): React.JSX.Element {
   // state, not designer state.
   const [brightness, setBrightnessState] = useState<number | null>(null)
   const [brightnessErr, setBrightnessErr] = useState<string | null>(null)
+  // Latest deviceUrl, readable from async callbacks without re-subscribing:
+  // used to drop results from a connect the user has already moved on from.
+  const deviceUrlRef = useRef(deviceUrl)
+  useEffect(() => {
+    deviceUrlRef.current = deviceUrl
+  }, [deviceUrl])
 
   const [paths, setPaths] = useState<string[]>([])
   const [pathFilter, setPathFilter] = useState<string>('')
@@ -982,20 +988,28 @@ export function App(): React.JSX.Element {
   const onConnect = async (): Promise<void> => {
     setHelloErr(null)
     setHello(null)
+    // Clear the previous device's brightness immediately: leaving it on
+    // screen during a connect would show one panel's value while the slider
+    // writes to another.
+    setBrightnessState(null)
+    setBrightnessErr(null)
+    const target = deviceUrl
     try {
-      const h = await fetchHello(deviceUrl)
+      const h = await fetchHello(target)
       setHello(h)
       // Brightness lives on the espOS config API, not /hello; a device that
       // does not serve it simply leaves the slider hidden.
       try {
-        setBrightnessState(await fetchBrightness(deviceUrl))
+        const b = await fetchBrightness(target)
+        // A slower earlier connect must not overwrite a newer one.
+        if (target === deviceUrlRef.current) setBrightnessState(b)
       } catch {
-        setBrightnessState(null)
+        if (target === deviceUrlRef.current) setBrightnessState(null)
       }
       // Only remember a URL that actually answered, so a typo does not
       // become the sticky default for every future session.
       try {
-        window.localStorage.setItem(DEVICE_URL_KEY, deviceUrl)
+        window.localStorage.setItem(DEVICE_URL_KEY, target)
       } catch {
         // non-fatal: the session still works, it just will not be remembered
       }
@@ -1011,13 +1025,16 @@ export function App(): React.JSX.Element {
    */
   const onBrightnessCommit = async (pct: number): Promise<void> => {
     setBrightnessErr(null)
+    const target = deviceUrl
     try {
-      await setBrightness(deviceUrl, pct)
+      await setBrightness(target, pct)
     } catch (e) {
+      if (target !== deviceUrlRef.current) return
       setBrightnessErr(e instanceof Error ? e.message : String(e))
       // Put the slider back where the device actually is.
       try {
-        setBrightnessState(await fetchBrightness(deviceUrl))
+        const b = await fetchBrightness(target)
+        if (target === deviceUrlRef.current) setBrightnessState(b)
       } catch {
         /* leave the shown value; the error is already surfaced */
       }

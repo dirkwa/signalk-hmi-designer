@@ -149,10 +149,13 @@ const plugin = (app: ServerAPI): Plugin => {
           return
         }
         const url = b.url
-        // Only allow http(s):// to private addresses. We accept the
-        // shape of a normal URL; rejection of public targets is
-        // host-level concern (SK server should be on a LAN), but we
-        // still parse to catch typos.
+        // NOTE: the target is NOT restricted to private addresses -- this
+        // parses the URL to catch typos and rejects non-http(s) schemes, but
+        // any reachable host is forwarded to. The proxy runs with the SK
+        // server's network position and inherits its auth, so an authenticated
+        // webapp user can reach anything the server can. That was already true
+        // for GET/POST; PUT raises the stakes because it can change state.
+        // An allowlist of discovered panels would close this.
         let parsed: URL
         try {
           parsed = new URL(url)
