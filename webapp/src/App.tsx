@@ -37,11 +37,13 @@ import {
   fetchDevices,
   fetchHello,
   fetchPathMeta,
+  fetchBrightness,
   fetchScreenshot,
   fetchSelfPaths,
   loadSavedLayout,
   pushLayout,
   saveLayout,
+  setBrightness,
   type DiscoveredDevice,
   type MetaZone,
   type PushResult
@@ -407,6 +409,11 @@ export function App(): React.JSX.Element {
   })
   const [hello, setHello] = useState<HelloResponse | null>(null)
   const [helloErr, setHelloErr] = useState<string | null>(null)
+  // Backlight brightness (percent). null = not loaded or unsupported by the
+  // device. Persisted on the device in NVS, so this is a read of device
+  // state, not designer state.
+  const [brightness, setBrightnessState] = useState<number | null>(null)
+  const [brightnessErr, setBrightnessErr] = useState<string | null>(null)
 
   const [paths, setPaths] = useState<string[]>([])
   const [pathFilter, setPathFilter] = useState<string>('')
@@ -978,6 +985,13 @@ export function App(): React.JSX.Element {
     try {
       const h = await fetchHello(deviceUrl)
       setHello(h)
+      // Brightness lives on the espOS config API, not /hello; a device that
+      // does not serve it simply leaves the slider hidden.
+      try {
+        setBrightnessState(await fetchBrightness(deviceUrl))
+      } catch {
+        setBrightnessState(null)
+      }
       // Only remember a URL that actually answered, so a typo does not
       // become the sticky default for every future session.
       try {
@@ -987,6 +1001,26 @@ export function App(): React.JSX.Element {
       }
     } catch (e) {
       setHelloErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /**
+   * Commit the brightness the slider was released on. Dragging updates the
+   * number locally; only this writes, so one drag is one NVS write rather
+   * than one per intermediate value.
+   */
+  const onBrightnessCommit = async (pct: number): Promise<void> => {
+    setBrightnessErr(null)
+    try {
+      await setBrightness(deviceUrl, pct)
+    } catch (e) {
+      setBrightnessErr(e instanceof Error ? e.message : String(e))
+      // Put the slider back where the device actually is.
+      try {
+        setBrightnessState(await fetchBrightness(deviceUrl))
+      } catch {
+        /* leave the shown value; the error is already surfaced */
+      }
     }
   }
 
@@ -1415,6 +1449,32 @@ export function App(): React.JSX.Element {
               {wasmStatus}
             </span>
           )}
+          {brightness !== null && (
+            <label
+              className="topbar-toggle"
+              title={`Panel backlight brightness (${brightness}%) — stored on the device, survives a reboot`}
+              style={{ minWidth: 110 }}
+            >
+              <span>☀ {brightness}%</span>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={5}
+                value={brightness}
+                onChange={(e) => setBrightnessState(Number(e.target.value))}
+                onMouseUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+                onTouchEnd={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+                onKeyUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+              />
+            </label>
+          )}
           {shotUrl && (
             <label
               className="topbar-toggle"
@@ -1443,6 +1503,7 @@ export function App(): React.JSX.Element {
             </span>
           )}
           {helloErr && <span className="err">{helloErr}</span>}
+          {brightnessErr && <span className="err">{brightnessErr}</span>}
           {pushErr && <span className="err">{pushErr}</span>}
           {shotErr && <span className="err">{shotErr}</span>}
           {pushResult && (

@@ -167,8 +167,10 @@ const plugin = (app: ServerAPI): Plugin => {
 
         const method =
           typeof b.method === 'string' ? b.method.toUpperCase() : 'GET'
-        if (method !== 'GET' && method !== 'POST') {
-          res.status(400).json({ error: 'method must be GET or POST' })
+        // PUT is here for espOS's config API (/api/v1/config), which the
+        // brightness control writes to; the device's layout API uses POST.
+        if (method !== 'GET' && method !== 'POST' && method !== 'PUT') {
+          res.status(400).json({ error: 'method must be GET, POST or PUT' })
           return
         }
 
@@ -182,7 +184,7 @@ const plugin = (app: ServerAPI): Plugin => {
         }
 
         const init: RequestInit = { method, headers }
-        if (method === 'POST') {
+        if (method === 'POST' || method === 'PUT') {
           const payload =
             typeof b.body === 'string' ? b.body : JSON.stringify(b.body ?? {})
           init.body = payload
