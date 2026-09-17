@@ -233,6 +233,21 @@ function defaultWidget(
         w: displayW,
         h: displayH - DEFAULT_TAB_STRIP_HEIGHT
       }
+    case 'slider':
+      return {
+        ...base,
+        type: 'slider',
+        w: 320,
+        h: 100,
+        label: '',
+        bind: '',
+        min: 0,
+        max: 100,
+        // decimals:1 (not 0) so a bound path's nonzero metadata precision
+        // isn't blocked by applyBind's merge sentinel below, which treats
+        // 1 as "still default" and 0 as "user set".
+        display: { unit: '', scale: 1, offset: 0, decimals: 1 }
+      }
   }
 }
 
@@ -921,6 +936,7 @@ export function App(): React.JSX.Element {
             w.type !== 'value' &&
             w.type !== 'arc' &&
             w.type !== 'bar' &&
+            w.type !== 'slider' &&
             w.type !== 'button'
           ) {
             return w
@@ -1121,6 +1137,7 @@ export function App(): React.JSX.Element {
                     wid.type !== 'value' &&
                     wid.type !== 'arc' &&
                     wid.type !== 'bar' &&
+                    wid.type !== 'slider' &&
                     wid.type !== 'button'
                   ) {
                     return wid
@@ -1292,7 +1309,8 @@ export function App(): React.JSX.Element {
         'speaker',
         'mic',
         'volume',
-        'stream'
+        'stream',
+        'slider'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1310,7 +1328,8 @@ export function App(): React.JSX.Element {
         k === 'speaker' ||
         k === 'mic' ||
         k === 'volume' ||
-        k === 'stream'
+        k === 'stream' ||
+        k === 'slider'
     )
   }, [hello])
 
@@ -1708,7 +1727,9 @@ export function App(): React.JSX.Element {
                   />
                 </label>
               )}
-              {(selected.type === 'arc' || selected.type === 'bar') && (
+              {(selected.type === 'arc' ||
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     min
@@ -2227,7 +2248,8 @@ export function App(): React.JSX.Element {
               {(selected.type === 'label' ||
                 selected.type === 'value' ||
                 selected.type === 'arc' ||
-                selected.type === 'bar') && (
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     unit
