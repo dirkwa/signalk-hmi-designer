@@ -17,10 +17,14 @@ const API = readFileSync(
   'utf8'
 )
 
-const commitBody = (): string => {
-  const i = APP.indexOf('const onBrightnessCommit')
-  expect(i, 'onBrightnessCommit not found').toBeGreaterThan(-1)
-  return APP.slice(i, APP.indexOf('\n  }', i))
+/** Source of one top-level handler, so assertions cannot be satisfied by an
+ *  unrelated line elsewhere in a 1500-line file. */
+const handler = (name: string): string => {
+  const i = APP.indexOf(`const ${name}`)
+  expect(i, `${name} not found`).toBeGreaterThan(-1)
+  const end = APP.indexOf('\n  }', i)
+  expect(end, `${name} body not delimited`).toBeGreaterThan(i)
+  return APP.slice(i, end)
 }
 
 describe('brightness slider', () => {
@@ -36,24 +40,40 @@ describe('brightness slider', () => {
   // where the device is. Writing there can hit a panel that was never
   // connected.
   it('writes to the connected device, not the url input', () => {
-    const body = commitBody()
+    const body = handler('onBrightnessCommit')
     expect(body).toContain('const target = connectedUrl')
-    expect(body).not.toMatch(/const target = deviceUrl\b/)
+    // The binding alone proves nothing: assert the actual call, or
+    // setBrightness(deviceUrl, pct) would still satisfy the test.
+    expect(body).toMatch(/await setBrightness\(\s*target\s*,/)
+    expect(body).not.toMatch(/setBrightness\(\s*deviceUrl\b/)
+    expect(body).not.toMatch(/fetchBrightness\(\s*deviceUrl\b/)
   })
 
   // Reconnecting to the SAME url must invalidate the previous attempt, which
   // a url comparison cannot express.
   it('drops results from a superseded connect attempt', () => {
-    expect(APP).toContain('const gen = ++connectGen.current')
-    expect(APP).toContain('gen === connectGen.current')
+    // Scoped to onConnect: a generation taken there but never checked there
+    // would otherwise pass on onBrightnessCommit's own check alone.
+    const body = handler('onConnect')
+    expect(body).toContain('const gen = ++connectGen.current')
+    expect(body).toContain('gen === connectGen.current')
+    // Each result applied only while the attempt is still the newest one.
+    const guards = body.match(/if \(!?current\(\)\)/g) ?? []
+    expect(
+      guards.length,
+      'every applied result needs a guard'
+    ).toBeGreaterThanOrEqual(4)
+    // ...and the commit path carries its own, for a connect that changed
+    // while a write was in flight.
+    expect(handler('onBrightnessCommit')).toContain(
+      'gen !== connectGen.current'
+    )
   })
 
   // null hides the slider and means "no brightness reported". A failed
   // request must not look the same, or a reachable panel appears unsupported.
   it('reports a failed brightness load as an error', () => {
-    const i = APP.indexOf('const onConnect')
-    const body = APP.slice(i, APP.indexOf('\n  }', APP.indexOf('catch (e)', i)))
-    expect(body).toContain('brightness unavailable:')
+    expect(handler('onConnect')).toContain('brightness unavailable:')
   })
 
   // The device clamps too, but sending 0 from a UI that cannot be recovered
