@@ -59,6 +59,16 @@ header {
   font-size: 12px;
 }
 
+.topbar-devices {
+  max-width: 230px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid #30363d;
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .topbar-status {
   flex: 1;
   display: flex;

@@ -34,6 +34,7 @@ import {
 
 import {
   deriveDisplayDefaults,
+  deviceLabel,
   fetchDevices,
   fetchHello,
   fetchPathMeta,
@@ -41,8 +42,10 @@ import {
   fetchScreenshot,
   fetchSelfPaths,
   loadSavedLayout,
+  matchDevice,
   pushLayout,
   saveLayout,
+  sortDevices,
   setBrightness,
   type DiscoveredDevice,
   type MetaZone,
@@ -986,7 +989,7 @@ export function App(): React.JSX.Element {
     setScanning(true)
     setHelloErr(null)
     try {
-      const found = await fetchDevices()
+      const found = sortDevices(await fetchDevices())
       setDevices(found)
       // One panel on the LAN is the common case — select it outright
       // rather than making the user pick from a list of one.
@@ -1004,7 +1007,10 @@ export function App(): React.JSX.Element {
     }
   }
 
-  const onConnect = async (): Promise<void> => {
+  // `url` is for callers that have just chosen a target: the state update
+  // from setDeviceUrl has not landed yet, so reading deviceUrl would
+  // connect to the previous panel.
+  const onConnect = async (url?: string): Promise<void> => {
     setHelloErr(null)
     setHello(null)
     // Drop the previous device's identity and brightness immediately: leaving
@@ -1013,7 +1019,7 @@ export function App(): React.JSX.Element {
     setConnectedUrl(null)
     setBrightnessState(null)
     setBrightnessErr(null)
-    const target = deviceUrl
+    const target = url ?? deviceUrl
     const gen = ++connectGen.current
     // Results only count while this is still the newest attempt.
     const current = (): boolean => gen === connectGen.current
@@ -1047,6 +1053,14 @@ export function App(): React.JSX.Element {
       if (!current()) return
       setHelloErr(e instanceof Error ? e.message : String(e))
     }
+  }
+
+  // Choosing a scanned panel is the whole intent: fill the box and
+  // connect, rather than asking for a second click on Connect.
+  const onPickDevice = (url: string): void => {
+    if (!url) return
+    setDeviceUrl(url)
+    void onConnect(url)
   }
 
   /**
@@ -1421,18 +1435,10 @@ export function App(): React.JSX.Element {
           <input
             type="text"
             className="topbar-url"
-            list="discovered-devices"
             value={deviceUrl}
             onChange={(e) => setDeviceUrl(e.target.value)}
             placeholder={DEFAULT_DEVICE_URL}
           />
-          <datalist id="discovered-devices">
-            {(devices ?? []).map((d) => (
-              <option key={d.url} value={d.url}>
-                {d.name}
-              </option>
-            ))}
-          </datalist>
           <button
             onClick={() => void onScan()}
             disabled={scanning}
@@ -1440,6 +1446,29 @@ export function App(): React.JSX.Element {
           >
             {scanning ? 'Scanning…' : 'Scan'}
           </button>
+          {/* A real select, not a datalist: a datalist only offers entries
+              matching the text already in the box, and the box is pre-filled
+              with the last URL, so the other panels never showed. */}
+          {devices && devices.length > 0 && (
+            <select
+              className="topbar-devices"
+              aria-label="Panels found by the last scan"
+              title="Panels found by the last scan. Picking one connects to it."
+              value={matchDevice(devices, deviceUrl)?.url ?? ''}
+              onChange={(e) => onPickDevice(e.target.value)}
+            >
+              <option value="" disabled>
+                {devices.length === 1
+                  ? '1 panel found'
+                  : `${devices.length} panels found`}
+              </option>
+              {devices.map((d) => (
+                <option key={d.url} value={d.url}>
+                  {deviceLabel(d)}
+                </option>
+              ))}
+            </select>
+          )}
           <button onClick={() => void onConnect()}>Connect</button>
           <button className="primary" onClick={() => void onPush()}>
             Push

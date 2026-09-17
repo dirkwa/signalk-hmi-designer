@@ -408,6 +408,54 @@ export async function fetchDevices(): Promise<DiscoveredDevice[]> {
   return (body as { devices: DiscoveredDevice[] }).devices
 }
 
+/** Reduce a device URL to what identifies the panel: scheme, host and
+ *  port. Host names are case-insensitive, and neither a trailing slash
+ *  nor the trailing dot of an mDNS FQDN makes it a different panel. An
+ *  address that does not parse comes back trimmed but otherwise as typed,
+ *  so a half-typed URL simply matches nothing. */
+export function normalizeDeviceUrl(url: string): string {
+  const trimmed = url.trim()
+  try {
+    const u = new URL(trimmed)
+    const host = u.hostname.toLowerCase().replace(/\.$/, '')
+    return `${u.protocol}//${host}${u.port ? `:${u.port}` : ''}`
+  } catch {
+    return trimmed
+  }
+}
+
+/** The scanned panel the URL box currently points at, if any. */
+export function matchDevice(
+  devices: readonly DiscoveredDevice[],
+  url: string
+): DiscoveredDevice | undefined {
+  const want = normalizeDeviceUrl(url)
+  return devices.find((d) => normalizeDeviceUrl(d.url) === want)
+}
+
+/** Picker caption: the mDNS instance name plus where it lives, so two
+ *  panels that kept the same default name stay tellable apart. */
+export function deviceLabel(d: DiscoveredDevice): string {
+  let where = d.url
+  try {
+    where = new URL(d.url).host
+  } catch {
+    // keep the raw url
+  }
+  return d.name && d.name !== where ? `${d.name} (${where})` : where
+}
+
+/** mDNS answers arrive in whatever order responders win the race, so
+ *  the same two panels would swap places between scans. Sort a copy by
+ *  name, then url. */
+export function sortDevices(
+  devices: readonly DiscoveredDevice[]
+): DiscoveredDevice[] {
+  return [...devices].sort(
+    (a, b) => a.name.localeCompare(b.name) || a.url.localeCompare(b.url)
+  )
+}
+
 // ---- backlight brightness -------------------------------------------------
 //
 // Brightness is espOS config, not a layout property: it lives in the device's
