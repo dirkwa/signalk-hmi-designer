@@ -37,11 +37,13 @@ import {
   fetchDevices,
   fetchHello,
   fetchPathMeta,
+  fetchBrightness,
   fetchScreenshot,
   fetchSelfPaths,
   loadSavedLayout,
   pushLayout,
   saveLayout,
+  setBrightness,
   type DiscoveredDevice,
   type MetaZone,
   type PushResult
@@ -422,6 +424,20 @@ export function App(): React.JSX.Element {
   })
   const [hello, setHello] = useState<HelloResponse | null>(null)
   const [helloErr, setHelloErr] = useState<string | null>(null)
+  // Backlight brightness (percent). null = not loaded or unsupported by the
+  // device. Persisted on the device in NVS, so this is a read of device
+  // state, not designer state.
+  const [brightness, setBrightnessState] = useState<number | null>(null)
+  const [brightnessErr, setBrightnessErr] = useState<string | null>(null)
+  // Every connect attempt takes the next generation; results from an older
+  // one are dropped. A URL comparison alone is not enough -- reconnecting to
+  // the SAME url must also invalidate the previous attempt's in-flight
+  // results, and only a generation distinguishes those.
+  const connectGen = useRef(0)
+  // The url of the connection that actually answered. The input box is
+  // editable, so `deviceUrl` is where the user is typing, not where the
+  // device is; writes must target the latter.
+  const [connectedUrl, setConnectedUrl] = useState<string | null>(null)
 
   const [paths, setPaths] = useState<string[]>([])
   const [pathFilter, setPathFilter] = useState<string>('')
@@ -991,18 +1007,72 @@ export function App(): React.JSX.Element {
   const onConnect = async (): Promise<void> => {
     setHelloErr(null)
     setHello(null)
+    // Drop the previous device's identity and brightness immediately: leaving
+    // either on screen during a connect would show one panel's state while
+    // the slider writes to another.
+    setConnectedUrl(null)
+    setBrightnessState(null)
+    setBrightnessErr(null)
+    const target = deviceUrl
+    const gen = ++connectGen.current
+    // Results only count while this is still the newest attempt.
+    const current = (): boolean => gen === connectGen.current
     try {
-      const h = await fetchHello(deviceUrl)
+      const h = await fetchHello(target)
+      if (!current()) return
       setHello(h)
+      setConnectedUrl(target)
       // Only remember a URL that actually answered, so a typo does not
       // become the sticky default for every future session.
       try {
-        window.localStorage.setItem(DEVICE_URL_KEY, deviceUrl)
+        window.localStorage.setItem(DEVICE_URL_KEY, target)
       } catch {
         // non-fatal: the session still works, it just will not be remembered
       }
+      // Brightness lives on the espOS config API, not /hello. null hides the
+      // slider and means "this device does not report one"; a failed request
+      // is an error and must say so, or a reachable panel looks unsupported.
+      try {
+        const b = await fetchBrightness(target)
+        if (current()) setBrightnessState(b)
+      } catch (e) {
+        if (current()) {
+          setBrightnessState(null)
+          setBrightnessErr(
+            `brightness unavailable: ${e instanceof Error ? e.message : String(e)}`
+          )
+        }
+      }
     } catch (e) {
+      if (!current()) return
       setHelloErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /**
+   * Commit the brightness the slider was released on. Dragging updates the
+   * number locally; only this writes, so one drag is one NVS write rather
+   * than one per intermediate value.
+   */
+  const onBrightnessCommit = async (pct: number): Promise<void> => {
+    // Write to the device that answered, never to whatever is currently in
+    // the url box: the user may have typed or scanned a new one since.
+    const target = connectedUrl
+    if (!target) return
+    const gen = connectGen.current
+    setBrightnessErr(null)
+    try {
+      await setBrightness(target, pct)
+    } catch (e) {
+      if (gen !== connectGen.current) return
+      setBrightnessErr(e instanceof Error ? e.message : String(e))
+      // Put the slider back where the device actually is.
+      try {
+        const b = await fetchBrightness(target)
+        if (gen === connectGen.current) setBrightnessState(b)
+      } catch {
+        /* leave the shown value; the error is already surfaced */
+      }
     }
   }
 
@@ -1434,6 +1504,32 @@ export function App(): React.JSX.Element {
               {wasmStatus}
             </span>
           )}
+          {connectedUrl !== null && brightness !== null && (
+            <label
+              className="topbar-toggle"
+              title={`Panel backlight brightness (${brightness}%) — stored on the device, survives a reboot`}
+              style={{ minWidth: 110 }}
+            >
+              <span>☀ {brightness}%</span>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={5}
+                value={brightness}
+                onChange={(e) => setBrightnessState(Number(e.target.value))}
+                // pointerup, not mouseup+touchend: a touch dispatches
+                // touchend AND a compatibility mouseup, which would send two
+                // PUTs -- and two NVS writes -- for one release.
+                onPointerUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+                onKeyUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+              />
+            </label>
+          )}
           {shotUrl && (
             <label
               className="topbar-toggle"
@@ -1462,6 +1558,7 @@ export function App(): React.JSX.Element {
             </span>
           )}
           {helloErr && <span className="err">{helloErr}</span>}
+          {brightnessErr && <span className="err">{brightnessErr}</span>}
           {pushErr && <span className="err">{pushErr}</span>}
           {shotErr && <span className="err">{shotErr}</span>}
           {pushResult && (

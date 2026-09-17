@@ -12,7 +12,7 @@ const PLUGIN_BASE = '/plugins/signalk-hmi-designer'
 
 interface ProxyRequest {
   url: string
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PUT'
   body?: unknown
 }
 
@@ -406,4 +406,54 @@ export async function fetchDevices(): Promise<DiscoveredDevice[]> {
     throw new Error('device discovery returned an unexpected shape')
   }
   return (body as { devices: DiscoveredDevice[] }).devices
+}
+
+// ---- backlight brightness -------------------------------------------------
+//
+// Brightness is espOS config, not a layout property: it lives in the device's
+// `cockpit` namespace, is stored in NVS and is re-applied on every boot, so a
+// value set here survives a reboot without the designer doing anything.
+//
+// It is served by the espOS web server on port 80, NOT by the layout API the
+// rest of this file talks to (:8081), so the port is replaced rather than the
+// device URL reused as-is.
+
+/** espOS config base (port 80) for a device given its layout API URL. */
+function configBase(deviceUrl: string): string {
+  const u = new URL(deviceUrl)
+  u.port = ''
+  u.pathname = ''
+  return u.toString().replace(/\/$/, '')
+}
+
+/** Current backlight brightness in percent, or null if unsupported. */
+export async function fetchBrightness(
+  deviceUrl: string
+): Promise<number | null> {
+  const v = await deviceProxy<unknown>({
+    url: `${configBase(deviceUrl)}/api/v1/config`,
+    method: 'GET'
+  })
+  if (typeof v !== 'object' || v === null) return null
+  const cockpit = (v as Record<string, unknown>).cockpit
+  if (typeof cockpit !== 'object' || cockpit === null) return null
+  const b = (cockpit as Record<string, unknown>).brightness
+  return typeof b === 'number' ? b : null
+}
+
+/**
+ * Set the backlight brightness and persist it. The device clamps to the
+ * descriptor's 5..100; 0 is not offered because a panel at 0 cannot be
+ * turned back up from its own screen.
+ */
+export async function setBrightness(
+  deviceUrl: string,
+  pct: number
+): Promise<void> {
+  const clamped = Math.max(5, Math.min(100, Math.round(pct)))
+  await deviceProxy<unknown>({
+    url: `${configBase(deviceUrl)}/api/v1/config`,
+    method: 'PUT',
+    body: { cockpit: { brightness: clamped } }
+  })
 }
