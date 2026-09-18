@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   firmwareMeets,
   isHelloResponse,
+  mergeTheme,
   parseFirmwareVersion,
   type AnchorWidget,
   type ButtonWidget,
@@ -9,7 +10,8 @@ import {
   type StreamWidget,
   type SliderWidget,
   type Widget,
-  type WidgetKind
+  type WidgetKind,
+  type Layout
 } from '../webapp/src/schema'
 
 describe('isHelloResponse', () => {
@@ -234,5 +236,39 @@ describe('button null press_value', () => {
     // Round-trips through JSON as a real null (not dropped).
     const round = JSON.parse(JSON.stringify(w))
     expect(round.press_value).toBe(null)
+  })
+})
+
+describe('layout theme', () => {
+  it('round-trips the theme block and leaves an absent one absent', () => {
+    const themed: Layout = {
+      schema: 1,
+      name: 'themed',
+      theme: { bg: '#000000', accent: '#ff8800' },
+      screens: [{ id: 'main', title: 'Main', widgets: [] }]
+    }
+    expect(JSON.parse(JSON.stringify(themed))).toEqual(themed)
+    const plain: Layout = {
+      schema: 1,
+      name: 'plain',
+      screens: [{ id: 'main', title: 'Main', widgets: [] }]
+    }
+    expect('theme' in JSON.parse(JSON.stringify(plain))).toBe(false)
+  })
+
+  it('mergeTheme sets and clears single fields', () => {
+    expect(mergeTheme(undefined, { bg: '#000000' })).toEqual({ bg: '#000000' })
+    expect(
+      mergeTheme({ bg: '#000000', fg: '#ffffff' }, { fg: undefined })
+    ).toEqual({ bg: '#000000' })
+    expect(mergeTheme({ bg: '#000000' }, { accent: '#ff8800' })).toEqual({
+      bg: '#000000',
+      accent: '#ff8800'
+    })
+  })
+
+  it('mergeTheme drops the block once the last field is cleared', () => {
+    expect(mergeTheme({ bg: '#000000' }, { bg: undefined })).toBeUndefined()
+    expect(mergeTheme(undefined, { bg: undefined })).toBeUndefined()
   })
 })

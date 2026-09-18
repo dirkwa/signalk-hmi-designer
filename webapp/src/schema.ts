@@ -333,6 +333,14 @@ export interface Layout {
    *  between screens. Only relevant when `screens.length > 1`;
    *  ignored otherwise. Default 56 px. */
   tab_strip_height?: number
+  /** Layout-wide color defaults, applied to the whole screen. `bg`
+   *  fills the screen background (omit for the firmware's default
+   *  dark theme). `fg` and `accent` are the fallback text/indicator
+   *  and active-fill colors for bars, arcs and buttons when a widget
+   *  has no matching SK zone and no `bg_color`/`fg_color` override —
+   *  the same zone > per-widget override > this > firmware-hardcoded-
+   *  default precedence used everywhere else. Omit any field to keep
+   *  the firmware default for it. */
   theme?: { bg?: string; fg?: string; accent?: string }
   /** Layout-level alert-overlay configuration. Default behaviour
    *  when omitted: enabled, min_state="alarm", modal ack. */
@@ -463,6 +471,22 @@ export interface HelloResponse {
   widgets: Record<string, { fields: string[] }>
   active_layout_name?: string
   layout_source?: string
+}
+
+/** Apply a patch to a layout's theme block and drop the block once no
+ *  field is left set, so clearing the last colour does not leave a
+ *  stray `{}` in the exported layout. */
+export function mergeTheme(
+  prev: Layout['theme'],
+  patch: Partial<NonNullable<Layout['theme']>>
+): Layout['theme'] {
+  const next = { ...prev, ...patch }
+  const defined = Object.fromEntries(
+    Object.entries(next).filter(([, v]) => v !== undefined)
+  )
+  return Object.keys(defined).length > 0
+    ? (defined as Layout['theme'])
+    : undefined
 }
 
 /** Narrowing helper — verifies an unknown value matches HelloResponse. */

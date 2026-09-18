@@ -32,7 +32,8 @@ import {
   MIN_DEVICE_FIRMWARE,
   parseFirmwareVersion,
   STATUS_OVERLAY_HEIGHT,
-  firmwareMeets
+  firmwareMeets,
+  mergeTheme
 } from './schema'
 
 import {
@@ -478,6 +479,15 @@ export function App(): React.JSX.Element {
     Layout['display'] | undefined
   >(undefined)
   const [showDisplayModal, setShowDisplayModal] = useState<boolean>(false)
+  const [themeConfig, setThemeConfig] = useState<Layout['theme'] | undefined>(
+    undefined
+  )
+  const [showThemeModal, setShowThemeModal] = useState<boolean>(false)
+  // Clearing the last set field should drop the whole `theme` block
+  // rather than leave a stray `{}` in the exported layout.
+  const updateTheme = (patch: Partial<NonNullable<Layout['theme']>>): void => {
+    setThemeConfig((prev) => mergeTheme(prev, patch))
+  }
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // Interim position of a currently-dragging/resizing tile. Set by
   // RGL onDrag/onResize, cleared on stop. Read by the WASM canvas
@@ -675,9 +685,10 @@ export function App(): React.JSX.Element {
       status_overlay: statusOverlay,
       ...(notifConfig ? { notifications: notifConfig } : {}),
       ...(displayConfig ? { display: displayConfig } : {}),
+      ...(themeConfig ? { theme: themeConfig } : {}),
       screens
     }),
-    [screens, statusOverlay, notifConfig, displayConfig]
+    [screens, statusOverlay, notifConfig, displayConfig, themeConfig]
   )
 
   // Canvas dimensions track the connected device's /hello.display
@@ -1407,9 +1418,13 @@ export function App(): React.JSX.Element {
     )
     setActiveIdx(0)
     setSelectedId(null)
-    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
-    if (l.notifications !== undefined) setNotifConfig(l.notifications)
-    if (l.display !== undefined) setDisplayConfig(l.display)
+    // A loaded layout replaces the whole designer state: a block it
+    // omits has to go too, or the previous layout's settings ride along
+    // into this one on the next save or push.
+    setStatusOverlay(l.status_overlay ?? true)
+    setNotifConfig(l.notifications)
+    setDisplayConfig(l.display)
+    setThemeConfig(l.theme)
     hydrateLayoutMeta(l, paths)
   }
   // Expose adoptLayout to the boot-restore effect via the ref. The
@@ -1845,6 +1860,12 @@ export function App(): React.JSX.Element {
           >
             Notifications
           </button>
+          <button
+            onClick={() => setShowThemeModal(true)}
+            title="Default screen background and active color for bars/arcs/buttons"
+          >
+            Theme
+          </button>
           {hello?.display?.idle_timeout && (
             <button
               onClick={() => setShowDisplayModal(true)}
@@ -1990,6 +2011,86 @@ export function App(): React.JSX.Element {
             </p>
             <div className="modal-actions">
               <button onClick={() => setShowDisplayModal(false)}>done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showThemeModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setShowThemeModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Theme</h3>
+            <p className="muted small">
+              Layout-wide defaults. Zone state and a widget's own bg_color/
+              fg_color always win over these — they only apply where neither one
+              does. Clear a field to fall back to the firmware default.
+            </p>
+            <label>
+              screen background
+              <input
+                type="color"
+                value={themeConfig?.bg ?? '#0d1117'}
+                onChange={(e) => updateTheme({ bg: e.target.value })}
+              />
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => updateTheme({ bg: undefined })}
+                title="Clear (use firmware default background)"
+              >
+                clear
+              </button>
+            </label>
+            <label>
+              default text / indicator color
+              <input
+                type="color"
+                value={themeConfig?.fg ?? '#e6edf3'}
+                onChange={(e) => updateTheme({ fg: e.target.value })}
+              />
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => updateTheme({ fg: undefined })}
+                title="Clear (use firmware default)"
+              >
+                clear
+              </button>
+            </label>
+            <label>
+              default active color (bars / arcs / buttons)
+              <input
+                type="color"
+                value={themeConfig?.accent ?? '#58a6ff'}
+                onChange={(e) => updateTheme({ accent: e.target.value })}
+              />
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => updateTheme({ accent: undefined })}
+                title="Clear (use firmware default accent)"
+              >
+                clear
+              </button>
+            </label>
+            <p className="muted small">
+              "Active" is the fill used for a bar/arc indicator or a button tile
+              when the bound path has no matching SK zone (or, for buttons, no
+              SK feedback loop at all) and the widget has no bg_color/fg_color
+              override of its own.
+            </p>
+            <div className="modal-actions">
+              <button
+                className="ghost"
+                onClick={() => setThemeConfig(undefined)}
+                title="Drop the whole theme block (firmware defaults apply)"
+              >
+                clear all
+              </button>
+              <button onClick={() => setShowThemeModal(false)}>done</button>
             </div>
           </div>
         </div>
