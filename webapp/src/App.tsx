@@ -759,6 +759,15 @@ export function App(): React.JSX.Element {
     [screens]
   )
   const skValues = useSkValues(boundPaths, paths)
+  // A slider bound to @brightness shows this panel's backlight, which is
+  // not a SignalK path: feed the preview the level read from the
+  // connected panel, so the knob sits where the panel's does.
+  const previewValues = useMemo(() => {
+    if (brightness === null) return skValues
+    const next = new Map(skValues)
+    next.set('@brightness', brightness)
+    return next
+  }, [skValues, brightness])
 
   // Notifications widgets are fed by polling SK's notifications.*
   // tree. Only poll if a layout actually uses a notifications widget
@@ -2145,6 +2154,13 @@ export function App(): React.JSX.Element {
                     />
                   </label>
                 )}
+              {selected.type === 'slider' &&
+                selected.bind === '@brightness' && (
+                  <p className="muted">
+                    panel backlight, 5 to 100 %: the same setting as the toolbar
+                    slider. min, max and display are ignored.
+                  </p>
+                )}
               {/* Covers bargroup sub-bar binds too, which have their own
                   inputs further down. */}
               {(() => {
@@ -2904,7 +2920,7 @@ export function App(): React.JSX.Element {
               displayH={displayH}
               pathZones={pathZones}
               pathDescriptions={pathDescriptions}
-              skValues={skValues}
+              skValues={previewValues}
               notifications={notifications}
               visible={previewMode === 'wasm'}
               onStatus={setWasmStatus}
