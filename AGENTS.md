@@ -93,7 +93,14 @@ For widgets that bind **multiple** SK paths (`bargroup`, `list`):
 - `boundPaths` flows through `useSkValues` so the WS subscribes per
   sub-bind.
 - Both meta-fetch loops (boot restore + `adoptLayout`) iterate
-  `bindsOf(w)` for zones + descriptions.
+  `bindsOf(w)` for zones + descriptions, via `hydrateLayoutMeta`.
+- A bind may extend past a SignalK leaf into its object value
+  (`navigation.position.latitude`). `resolveBindPath(bind, known)` in
+  `api.ts` splits it into the leaf to subscribe to and fetch meta for
+  plus the field path `getNestedField` reads from each delta; the
+  value map stays keyed by the full bind. Resolution needs the
+  self-paths list, so a layout adopted before it loads is hydrated
+  again when it arrives (`pendingMetaRef`).
 - For path-picker UX, set `bindTarget` to point at the focused field
   (`{barIdx: i}`) on input focus, route the click in the right-hand
   panel accordingly. Reset `bindTarget` to `'widget'` whenever
