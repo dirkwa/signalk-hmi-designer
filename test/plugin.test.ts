@@ -269,14 +269,42 @@ describe('POST /device-proxy', () => {
     expect(await res.json()).toEqual({ error: 'only http(s) supported' })
   })
 
-  it('rejects methods other than GET and POST', async () => {
+  it('rejects methods other than GET, POST and PUT', async () => {
     mounted = await mount(dataDir)
     const res = await proxy(mounted.base, {
       url: 'http://panel.local/layout',
-      method: 'PUT'
+      method: 'DELETE'
     })
     expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: 'method must be GET or POST' })
+    expect(await res.json()).toEqual({
+      error: 'method must be GET, POST or PUT'
+    })
+  })
+
+  // PUT is what the brightness control uses: espOS's /api/v1/config only
+  // accepts PUT, so a proxy that dropped it would make brightness read-only.
+  it('forwards a PUT with its body', async () => {
+    const panel = await upstream({
+      status: 200,
+      contentType: 'application/json',
+      body: Buffer.from('{"ok":true}')
+    })
+    cleanups.push(panel.close)
+    mounted = await mount(dataDir)
+
+    const res = await proxy(mounted.base, {
+      url: `${panel.url}/api/v1/config`,
+      method: 'PUT',
+      body: { cockpit: { brightness: 80 } }
+    })
+    expect(res.status).toBe(200)
+    expect(panel.seen).toHaveLength(1)
+    const req = panel.seen[0]
+    expect(req).toBeDefined()
+    expect(req?.method).toBe('PUT')
+    expect(JSON.parse(req?.body ?? '{}')).toEqual({
+      cockpit: { brightness: 80 }
+    })
   })
 
   it('forwards a GET and passes status, content-type and bytes through', async () => {

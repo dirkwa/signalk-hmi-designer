@@ -12,7 +12,7 @@ const PLUGIN_BASE = '/plugins/signalk-hmi-designer'
 
 interface ProxyRequest {
   url: string
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PUT'
   body?: unknown
 }
 
@@ -228,6 +228,80 @@ export interface DisplayDefaults {
   decimals: number
 }
 
+export type SkValue = number | string | boolean | null
+
+/**
+ * Split a widget bind that reaches past a SignalK leaf into a field of
+ * that leaf's object value. `navigation.position` is a leaf whose value
+ * is `{latitude, longitude}`; the bind `navigation.position.latitude`
+ * resolves to `skPath: 'navigation.position'` (what to subscribe to and
+ * fetch meta for) and `fieldPath: ['latitude']` (what to read from each
+ * delta's value, see `getNestedField`). The segments address the value
+ * itself, not the REST envelope around it, so `.value.` is never part
+ * of a bind.
+ *
+ * Matches against the longest known SK path that is a dot-segment
+ * prefix of `bind` (never a substring split mid-segment). Falls back
+ * to treating the whole bind as a literal SK path, with no extra
+ * field, when it is an exact known path, when `knownPaths` is empty
+ * (not loaded yet), or when nothing matches, which reproduces the
+ * pre-existing behaviour for ordinary binds.
+ *
+ * Pass a `Set` when resolving many binds against the same path list,
+ * so it is built once rather than per bind.
+ */
+export function resolveBindPath(
+  bind: string,
+  knownPaths: readonly string[] | ReadonlySet<string>
+): { skPath: string; fieldPath: string[] } {
+  if (!bind) return { skPath: bind, fieldPath: [] }
+  const known = knownPaths instanceof Set ? knownPaths : new Set(knownPaths)
+  if (known.has(bind)) return { skPath: bind, fieldPath: [] }
+  const segments = bind.split('.')
+  for (let i = segments.length - 1; i > 0; i--) {
+    const prefix = segments.slice(0, i).join('.')
+    if (known.has(prefix)) {
+      return { skPath: prefix, fieldPath: segments.slice(i) }
+    }
+  }
+  return { skPath: bind, fieldPath: [] }
+}
+
+/** True when `bind` reaches into an object value rather than naming a
+ *  SignalK leaf. The designer resolves such a bind client-side; the
+ *  panel firmware subscribes to binds literally and cannot. */
+export function isNestedBind(
+  bind: string,
+  knownPaths: readonly string[] | ReadonlySet<string>
+): boolean {
+  return resolveBindPath(bind, knownPaths).fieldPath.length > 0
+}
+
+/**
+ * Read the field a resolved bind's `fieldPath` names from a delta
+ * value. Null past the last object layer or for a non-scalar leaf;
+ * scalars are the kinds `pushAllValues` already handles for pushed
+ * data.
+ */
+export function getNestedField(
+  value: unknown,
+  fieldPath: readonly string[]
+): SkValue {
+  let cur: unknown = value
+  for (const key of fieldPath) {
+    if (cur === null || typeof cur !== 'object') return null
+    cur = (cur as Record<string, unknown>)[key]
+  }
+  if (
+    typeof cur === 'number' ||
+    typeof cur === 'string' ||
+    typeof cur === 'boolean'
+  ) {
+    return cur
+  }
+  return null
+}
+
 /** Fetch metadata for a SK path. Returns null on 404 / non-200. */
 export async function fetchPathMeta(skPath: string): Promise<PathMeta | null> {
   // Sentinel binds (`@drop_here`) are local device actions, not SignalK
@@ -406,4 +480,102 @@ export async function fetchDevices(): Promise<DiscoveredDevice[]> {
     throw new Error('device discovery returned an unexpected shape')
   }
   return (body as { devices: DiscoveredDevice[] }).devices
+}
+
+/** Reduce a device URL to what identifies the panel: scheme, host and
+ *  port. Host names are case-insensitive, and neither a trailing slash
+ *  nor the trailing dot of an mDNS FQDN makes it a different panel. An
+ *  address that does not parse comes back trimmed but otherwise as typed,
+ *  so a half-typed URL simply matches nothing. */
+export function normalizeDeviceUrl(url: string): string {
+  const trimmed = url.trim()
+  try {
+    const u = new URL(trimmed)
+    const host = u.hostname.toLowerCase().replace(/\.$/, '')
+    return `${u.protocol}//${host}${u.port ? `:${u.port}` : ''}`
+  } catch {
+    return trimmed
+  }
+}
+
+/** The scanned panel the URL box currently points at, if any. */
+export function matchDevice(
+  devices: readonly DiscoveredDevice[],
+  url: string
+): DiscoveredDevice | undefined {
+  const want = normalizeDeviceUrl(url)
+  return devices.find((d) => normalizeDeviceUrl(d.url) === want)
+}
+
+/** Picker caption: the mDNS instance name plus where it lives, so two
+ *  panels that kept the same default name stay tellable apart. */
+export function deviceLabel(d: DiscoveredDevice): string {
+  let where = d.url
+  try {
+    where = new URL(d.url).host
+  } catch {
+    // keep the raw url
+  }
+  return d.name && d.name !== where ? `${d.name} (${where})` : where
+}
+
+/** mDNS answers arrive in whatever order responders win the race, so
+ *  the same two panels would swap places between scans. Sort a copy by
+ *  name, then url. */
+export function sortDevices(
+  devices: readonly DiscoveredDevice[]
+): DiscoveredDevice[] {
+  return [...devices].sort(
+    (a, b) => a.name.localeCompare(b.name) || a.url.localeCompare(b.url)
+  )
+}
+
+// ---- backlight brightness -------------------------------------------------
+//
+// Brightness is espOS config, not a layout property: it lives in the device's
+// `cockpit` namespace, is stored in NVS and is re-applied on every boot, so a
+// value set here survives a reboot without the designer doing anything.
+//
+// It is served by the espOS web server on port 80, NOT by the layout API the
+// rest of this file talks to (:8081), so the port is replaced rather than the
+// device URL reused as-is.
+
+/** espOS config base (port 80) for a device given its layout API URL. */
+function configBase(deviceUrl: string): string {
+  const u = new URL(deviceUrl)
+  u.port = ''
+  u.pathname = ''
+  return u.toString().replace(/\/$/, '')
+}
+
+/** Current backlight brightness in percent, or null if unsupported. */
+export async function fetchBrightness(
+  deviceUrl: string
+): Promise<number | null> {
+  const v = await deviceProxy<unknown>({
+    url: `${configBase(deviceUrl)}/api/v1/config`,
+    method: 'GET'
+  })
+  if (typeof v !== 'object' || v === null) return null
+  const cockpit = (v as Record<string, unknown>).cockpit
+  if (typeof cockpit !== 'object' || cockpit === null) return null
+  const b = (cockpit as Record<string, unknown>).brightness
+  return typeof b === 'number' ? b : null
+}
+
+/**
+ * Set the backlight brightness and persist it. The device clamps to the
+ * descriptor's 5..100; 0 is not offered because a panel at 0 cannot be
+ * turned back up from its own screen.
+ */
+export async function setBrightness(
+  deviceUrl: string,
+  pct: number
+): Promise<void> {
+  const clamped = Math.max(5, Math.min(100, Math.round(pct)))
+  await deviceProxy<unknown>({
+    url: `${configBase(deviceUrl)}/api/v1/config`,
+    method: 'PUT',
+    body: { cockpit: { brightness: clamped } }
+  })
 }

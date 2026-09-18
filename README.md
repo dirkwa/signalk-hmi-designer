@@ -9,7 +9,7 @@ Reference target: [sensesp-p4-cockpit](https://github.com/dirkwa/sensesp-p4-cock
 Install as a SignalK plugin; open the **HMI Designer** webapp from the SK admin UI:
 
 1. **Connect** to a device URL. The designer GETs `/hello` to learn the widget catalog, display size, advertised capabilities (screenshot formats, idle-timeout support, ...) and the currently-active layout name.
-2. **Drag widgets** onto a canvas sized to the device's display. Bind each to a SignalK path picked from the live path list on this server.
+2. **Drag widgets** onto a canvas sized to the device's display. Bind each to a SignalK path picked from the live path list on this server. A bind may also reach into an object-valued path by appending the field name, e.g. `navigation.position.latitude`: the designer subscribes to `navigation.position`, reads `latitude` from each update and takes zones and units from the parent path's metadata. This resolves in the designer preview only. The panel firmware subscribes to binds as literal SignalK paths and cannot read a field inside an object value, so Push refuses a layout that contains such a bind until the firmware supports it.
 3. **Push layout** — POSTs the JSON via a server-side proxy to the device's `/layout`, which stages it offscreen, swaps atomically, and persists to LittleFS on success.
 
 ## Preview modes

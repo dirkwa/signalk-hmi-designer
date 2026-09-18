@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
+import GridLayout, {
+  getCompactor,
+  type LayoutItem as GLLayout
+} from 'react-grid-layout'
 import {
   DndContext,
   PointerSensor,
@@ -34,14 +37,21 @@ import {
 
 import {
   deriveDisplayDefaults,
+  deviceLabel,
   fetchDevices,
   fetchHello,
   fetchPathMeta,
+  fetchBrightness,
   fetchScreenshot,
   fetchSelfPaths,
+  isNestedBind,
   loadSavedLayout,
+  matchDevice,
   pushLayout,
+  resolveBindPath,
   saveLayout,
+  sortDevices,
+  setBrightness,
   type DiscoveredDevice,
   type MetaZone,
   type PushResult
@@ -66,6 +76,20 @@ declare const __PLUGIN_VERSION__: string
 const COLS = 24
 const ROW_HEIGHT = 25
 const ROW_PX_H = ROW_HEIGHT
+
+// react-grid-layout 2 takes its settings as config objects instead of
+// flat props. The ones that never change live here so their identity is
+// stable across renders.
+//
+// The designer must NOT auto-reflow: a drag of one widget should never
+// displace another. No compaction disables gravity, and allowing overlap
+// lets tiles park anywhere without pushing their siblings.
+const FREEFORM_COMPACTOR = getCompactor(null, true)
+// Drag only via the chrome bar (which only appears on selected widgets),
+// so unselected widgets behave as pure click targets. The library's
+// default 3px drag threshold is left on, so a click on the bar is never
+// taken for a drag.
+const DRAG_CONFIG = { handle: '.chrome' } as const
 // Fallback width used before a device has connected (hello not loaded
 // yet). 1024 matches the Waveshare 7B which we develop against.
 const DEFAULT_DISPLAY_W = 1024
@@ -232,6 +256,21 @@ function defaultWidget(
         y: 0,
         w: displayW,
         h: displayH - DEFAULT_TAB_STRIP_HEIGHT
+      }
+    case 'slider':
+      return {
+        ...base,
+        type: 'slider',
+        w: 320,
+        h: 100,
+        label: '',
+        bind: '',
+        min: 0,
+        max: 100,
+        // decimals:1 (not 0) so a bound path's nonzero metadata precision
+        // isn't blocked by applyBind's merge sentinel below, which treats
+        // 1 as "still default" and 0 as "user set".
+        display: { unit: '', scale: 1, offset: 0, decimals: 1 }
       }
   }
 }
@@ -407,8 +446,23 @@ export function App(): React.JSX.Element {
   })
   const [hello, setHello] = useState<HelloResponse | null>(null)
   const [helloErr, setHelloErr] = useState<string | null>(null)
+  // Backlight brightness (percent). null = not loaded or unsupported by the
+  // device. Persisted on the device in NVS, so this is a read of device
+  // state, not designer state.
+  const [brightness, setBrightnessState] = useState<number | null>(null)
+  const [brightnessErr, setBrightnessErr] = useState<string | null>(null)
+  // Every connect attempt takes the next generation; results from an older
+  // one are dropped. A URL comparison alone is not enough -- reconnecting to
+  // the SAME url must also invalidate the previous attempt's in-flight
+  // results, and only a generation distinguishes those.
+  const connectGen = useRef(0)
+  // The url of the connection that actually answered. The input box is
+  // editable, so `deviceUrl` is where the user is typing, not where the
+  // device is; writes must target the latter.
+  const [connectedUrl, setConnectedUrl] = useState<string | null>(null)
 
   const [paths, setPaths] = useState<string[]>([])
+  const knownPathSet = useMemo(() => new Set(paths), [paths])
   const [pathFilter, setPathFilter] = useState<string>('')
 
   const [screens, setScreens] = useState<Screen[]>([
@@ -517,10 +571,27 @@ export function App(): React.JSX.Element {
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
+  // The in-flight (or settled) self-paths request. Push awaits it so a
+  // push right after load still gets its binds checked, and retries it
+  // once after a failure instead of trusting an empty list.
+  const pathsRequest = useRef<Promise<string[]> | null>(null)
+  const loadPaths = (): Promise<string[]> => {
+    const req = fetchSelfPaths()
+      .then((p) => {
+        setPaths(p)
+        return p
+      })
+      .catch((e: unknown) => {
+        setPaths([])
+        throw e
+      })
+    pathsRequest.current = req
+    return req
+  }
   useEffect(() => {
-    void fetchSelfPaths()
-      .then(setPaths)
-      .catch(() => setPaths([]))
+    loadPaths().catch(() => {
+      /* surfaced by whatever needs the list, e.g. onPush */
+    })
   }, [])
 
   // Restore previously-saved layout on first mount. Hydrates all
@@ -643,6 +714,33 @@ export function App(): React.JSX.Element {
     [screen.widgets, colPxW]
   )
 
+  // Rows that fit the canvas: the display minus the status overlay strip
+  // and the tab strip. With autoSize off this makes the grid container
+  // fill the full canvas height, so widgets can be dragged into the lower
+  // portion; otherwise RGL sizes itself to the lowest existing widget's
+  // row, which leaves no drop zone below.
+  const maxRows = Math.floor(
+    (displayH -
+      (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
+      (showTabStrip ? tabStripHeight : 0)) /
+      ROW_HEIGHT
+  )
+  // RGL defaults margin and containerPadding to [10,10], which shifts
+  // everything by 10-20px per widget, and the canvas no longer reflects
+  // the device 1:1. Zero both so JSON pixel coords map directly to canvas
+  // pixels. Memoized: a fresh object each render would look like a config
+  // change to the grid.
+  const gridConfig = useMemo(
+    () => ({
+      cols: COLS,
+      rowHeight: ROW_HEIGHT,
+      margin: [0, 0] as const,
+      containerPadding: [0, 0] as const,
+      maxRows
+    }),
+    [maxRows]
+  )
+
   // Effective layout for the WASM canvas: layoutDoc with the
   // currently-dragging widget's coords overridden from dragPreview
   // so the wasm render moves in real-time as the user drags. When
@@ -667,7 +765,7 @@ export function App(): React.JSX.Element {
     () => screens.flatMap((s) => s.widgets.flatMap(bindsOf)),
     [screens]
   )
-  const skValues = useSkValues(boundPaths)
+  const skValues = useSkValues(boundPaths, paths)
 
   // Notifications widgets are fed by polling SK's notifications.*
   // tree. Only poll if a layout actually uses a notifications widget
@@ -705,11 +803,12 @@ export function App(): React.JSX.Element {
   // — and writing those back to state grid-quantizes pixel positions,
   // drifting widgets over time.
   const onDragStop = (
-    _layout: GLLayout[],
-    _oldItem: GLLayout,
-    newItem: GLLayout
+    _layout: readonly GLLayout[],
+    _oldItem: GLLayout | null,
+    newItem: GLLayout | null
   ): void => {
     setDragPreview(null)
+    if (!newItem) return
     setScreen((prev) => ({
       ...prev,
       widgets: prev.widgets.map((w) =>
@@ -728,10 +827,11 @@ export function App(): React.JSX.Element {
   // while SVG mode (which already updates from screens state)
   // sees no behaviour change.
   const onDragOrResize = (
-    _layout: GLLayout[],
-    _oldItem: GLLayout,
-    newItem: GLLayout
+    _layout: readonly GLLayout[],
+    _oldItem: GLLayout | null,
+    newItem: GLLayout | null
   ): void => {
+    if (!newItem) return
     setDragPreview({ id: newItem.i, grid: newItem })
   }
 
@@ -911,7 +1011,13 @@ export function App(): React.JSX.Element {
   const applyBind = (id: string, path: string): void => {
     updateWidget(id, { bind: path })
     if (!path) return
-    void fetchPathMeta(path).then((meta) => {
+    // An extended bind (`navigation.position.latitude`, reaching into
+    // the leaf's object value) has no meta of its own: fetch the leaf's,
+    // but keep prefill/zone state keyed by the full bind so the wasm
+    // bridge (which subjects by the literal bind string) still gets it
+    // under the right key.
+    const { skPath } = resolveBindPath(path, paths)
+    void fetchPathMeta(skPath).then((meta) => {
       if (!meta) return
       if (meta.zones && meta.zones.length > 0) {
         setPathZones((prev) => {
@@ -939,6 +1045,7 @@ export function App(): React.JSX.Element {
             w.type !== 'value' &&
             w.type !== 'arc' &&
             w.type !== 'bar' &&
+            w.type !== 'slider' &&
             w.type !== 'button'
           ) {
             return w
@@ -963,6 +1070,74 @@ export function App(): React.JSX.Element {
     })
   }
 
+  // Sub-bar counterpart of applyBind: bind the i-th bar of a bargroup
+  // and hydrate its zones, description and display defaults the same
+  // way, whether the path was picked from the list or typed.
+  const applyBarBind = (id: string, i: number, bind: string): void => {
+    setScreen((prev) => ({
+      ...prev,
+      widgets: prev.widgets.map((w) => {
+        if (w.id !== id || w.type !== 'bargroup') return w
+        return {
+          ...w,
+          bars: w.bars.map((b, j) => (j === i ? { ...b, bind } : b))
+        }
+      })
+    }))
+    if (!bind) return
+    const { skPath } = resolveBindPath(bind, paths)
+    void fetchPathMeta(skPath).then((meta) => {
+      if (!meta) return
+      if (meta.zones && meta.zones.length > 0) {
+        setPathZones((prev) => {
+          const next = new Map(prev)
+          next.set(bind, meta.zones!)
+          return next
+        })
+      }
+      if (meta.description) {
+        setPathDescriptions((prev) => {
+          const next = new Map(prev)
+          next.set(bind, meta.description!)
+          return next
+        })
+      }
+      // Only fills empty/default fields, never a user-set value.
+      const d = deriveDisplayDefaults(meta)
+      if (!d) return
+      setScreen((prev) => ({
+        ...prev,
+        widgets: prev.widgets.map((wid) => {
+          if (wid.id !== id || wid.type !== 'bargroup') return wid
+          const bars2 = wid.bars.map((b, j) => {
+            // The bind may have been retyped before the fetch resolved.
+            if (j !== i || b.bind !== bind) return b
+            const cur = b.display ?? {}
+            return {
+              ...b,
+              display: {
+                unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                scale:
+                  cur.scale !== undefined && cur.scale !== 1
+                    ? cur.scale
+                    : d.scale,
+                offset:
+                  cur.offset !== undefined && cur.offset !== 0
+                    ? cur.offset
+                    : d.offset,
+                decimals:
+                  cur.decimals !== undefined && cur.decimals !== 1
+                    ? cur.decimals
+                    : d.decimals
+              }
+            }
+          })
+          return { ...wid, bars: bars2 }
+        })
+      }))
+    })
+  }
+
   /* ---- device discovery (mDNS, via the plugin) ---- */
 
   const [devices, setDevices] = useState<DiscoveredDevice[] | null>(null)
@@ -972,7 +1147,7 @@ export function App(): React.JSX.Element {
     setScanning(true)
     setHelloErr(null)
     try {
-      const found = await fetchDevices()
+      const found = sortDevices(await fetchDevices())
       setDevices(found)
       // One panel on the LAN is the common case — select it outright
       // rather than making the user pick from a list of one.
@@ -990,21 +1165,86 @@ export function App(): React.JSX.Element {
     }
   }
 
-  const onConnect = async (): Promise<void> => {
+  // `url` is for callers that have just chosen a target: the state update
+  // from setDeviceUrl has not landed yet, so reading deviceUrl would
+  // connect to the previous panel.
+  const onConnect = async (url?: string): Promise<void> => {
     setHelloErr(null)
     setHello(null)
+    // Drop the previous device's identity and brightness immediately: leaving
+    // either on screen during a connect would show one panel's state while
+    // the slider writes to another.
+    setConnectedUrl(null)
+    setBrightnessState(null)
+    setBrightnessErr(null)
+    const target = url ?? deviceUrl
+    const gen = ++connectGen.current
+    // Results only count while this is still the newest attempt.
+    const current = (): boolean => gen === connectGen.current
     try {
-      const h = await fetchHello(deviceUrl)
+      const h = await fetchHello(target)
+      if (!current()) return
       setHello(h)
+      setConnectedUrl(target)
       // Only remember a URL that actually answered, so a typo does not
       // become the sticky default for every future session.
       try {
-        window.localStorage.setItem(DEVICE_URL_KEY, deviceUrl)
+        window.localStorage.setItem(DEVICE_URL_KEY, target)
       } catch {
         // non-fatal: the session still works, it just will not be remembered
       }
+      // Brightness lives on the espOS config API, not /hello. null hides the
+      // slider and means "this device does not report one"; a failed request
+      // is an error and must say so, or a reachable panel looks unsupported.
+      try {
+        const b = await fetchBrightness(target)
+        if (current()) setBrightnessState(b)
+      } catch (e) {
+        if (current()) {
+          setBrightnessState(null)
+          setBrightnessErr(
+            `brightness unavailable: ${e instanceof Error ? e.message : String(e)}`
+          )
+        }
+      }
     } catch (e) {
+      if (!current()) return
       setHelloErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // Choosing a scanned panel is the whole intent: fill the box and
+  // connect, rather than asking for a second click on Connect.
+  const onPickDevice = (url: string): void => {
+    if (!url) return
+    setDeviceUrl(url)
+    void onConnect(url)
+  }
+
+  /**
+   * Commit the brightness the slider was released on. Dragging updates the
+   * number locally; only this writes, so one drag is one NVS write rather
+   * than one per intermediate value.
+   */
+  const onBrightnessCommit = async (pct: number): Promise<void> => {
+    // Write to the device that answered, never to whatever is currently in
+    // the url box: the user may have typed or scanned a new one since.
+    const target = connectedUrl
+    if (!target) return
+    const gen = connectGen.current
+    setBrightnessErr(null)
+    try {
+      await setBrightness(target, pct)
+    } catch (e) {
+      if (gen !== connectGen.current) return
+      setBrightnessErr(e instanceof Error ? e.message : String(e))
+      // Put the slider back where the device actually is.
+      try {
+        const b = await fetchBrightness(target)
+        if (gen === connectGen.current) setBrightnessState(b)
+      } catch {
+        /* leave the shown value; the error is already surfaced */
+      }
     }
   }
 
@@ -1058,22 +1298,15 @@ export function App(): React.JSX.Element {
     }
   }
 
-  // Replaces the entire designer state (screens + statusOverlay) with
-  // a loaded Layout. Also re-fetches zones for every bound path so
-  // colors appear immediately.
-  const adoptLayout = (raw: Layout): void => {
-    const l = migrateLayout(raw)
-    setScreens(
-      l.screens.length > 0
-        ? l.screens
-        : [{ id: 'main', title: 'Main', widgets: [] }]
-    )
-    setActiveIdx(0)
-    setSelectedId(null)
-    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
-    if (l.notifications !== undefined) setNotifConfig(l.notifications)
-    if (l.display !== undefined) setDisplayConfig(l.display)
-    if (l.theme !== undefined) setThemeConfig(l.theme)
+  // Zones, descriptions and the displayUnits prefill for every bind in
+  // a layout, keyed by the bind string. Extended binds take the meta of
+  // the leaf they reach into, resolved against `knownPaths`.
+  const hydrateLayoutMeta = (
+    l: Layout,
+    knownPaths: readonly string[],
+    onlyExtended = false
+  ): void => {
+    const known = new Set(knownPaths)
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
         for (const p of bindsOf(w)) {
@@ -1082,7 +1315,9 @@ export function App(): React.JSX.Element {
           // prefill back to the right slot without re-traversing
           // the layout.
           const widId = w.id
-          void fetchPathMeta(p).then((meta) => {
+          const { skPath, fieldPath } = resolveBindPath(p, known)
+          if (onlyExtended && fieldPath.length === 0) continue
+          void fetchPathMeta(skPath).then((meta) => {
             if (!meta) return
             if (meta.zones && meta.zones.length > 0) {
               setPathZones((prev) => {
@@ -1140,6 +1375,7 @@ export function App(): React.JSX.Element {
                     wid.type !== 'value' &&
                     wid.type !== 'arc' &&
                     wid.type !== 'bar' &&
+                    wid.type !== 'slider' &&
                     wid.type !== 'button'
                   ) {
                     return wid
@@ -1176,10 +1412,41 @@ export function App(): React.JSX.Element {
       }
     }
   }
+
+  // Replaces the entire designer state (screens + statusOverlay) with
+  // a loaded Layout. Also re-fetches zones for every bound path so
+  // colors appear immediately.
+  const adoptLayout = (raw: Layout): void => {
+    const l = migrateLayout(raw)
+    setScreens(
+      l.screens.length > 0
+        ? l.screens
+        : [{ id: 'main', title: 'Main', widgets: [] }]
+    )
+    setActiveIdx(0)
+    setSelectedId(null)
+    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
+    if (l.notifications !== undefined) setNotifConfig(l.notifications)
+    if (l.display !== undefined) setDisplayConfig(l.display)
+    if (l.theme !== undefined) setThemeConfig(l.theme)
+    hydrateLayoutMeta(l, paths)
+  }
   // Expose adoptLayout to the boot-restore effect via the ref. The
   // effect can't call adoptLayout directly because it's declared
   // above this point; the ref bridges the ordering.
   adoptLayoutRef.current = adoptLayout
+
+  // An extended bind can only resolve once the self-paths list is
+  // there, and both the boot restore and a bind typed early beat that
+  // request. When the list lands, hydrate the extended binds of
+  // whatever layout is current, from any source: restored, loaded or
+  // typed. Plain binds were hydrated fine the first time, so only the
+  // extended ones are fetched. `paths` is the trigger; the rest is
+  // read from this render on purpose.
+  useEffect(() => {
+    if (paths.length === 0) return
+    hydrateLayoutMeta(layoutDoc, paths, true)
+  }, [paths])
 
   const onSave = async (): Promise<void> => {
     setFileMsg(null)
@@ -1275,6 +1542,45 @@ export function App(): React.JSX.Element {
       )
       return
     }
+    // The preview resolves a nested bind client-side, but the layout
+    // reaches the panel with the bind as typed, and the firmware
+    // subscribes to it literally: the widget would show nothing. Refuse
+    // rather than push a layout that is broken on the device. Telling a
+    // nested bind from a leaf needs the self-paths list, so wait for it
+    // and refuse as well when it cannot be had.
+    let known: ReadonlySet<string>
+    try {
+      const req = pathsRequest.current ?? loadPaths()
+      known = new Set(
+        await req.catch(() => {
+          // Another push may already have started the retry; share it
+          // rather than fetching the whole self tree once per click.
+          const latest = pathsRequest.current
+          return latest && latest !== req ? latest : loadPaths()
+        })
+      )
+    } catch {
+      setPushErr(
+        'Could not load the SignalK path list, so binds cannot be ' +
+          'checked before pushing. Check the server connection and try again.'
+      )
+      return
+    }
+    const nested = layoutDoc.screens.flatMap((s) =>
+      s.widgets.flatMap((w) =>
+        bindsOf(w)
+          .filter((b) => isNestedBind(b, known))
+          .map((b) => `${w.id}: ${b}`)
+      )
+    )
+    if (nested.length > 0) {
+      setPushErr(
+        'The panel cannot resolve a bind that reaches into an object ' +
+          'value; it subscribes to binds as literal SignalK paths. Bind ' +
+          `to the parent path or remove the field first: ${nested.join(', ')}`
+      )
+      return
+    }
     try {
       const r = await pushLayout(deviceUrl, layoutDoc)
       setPushResult(r)
@@ -1311,7 +1617,8 @@ export function App(): React.JSX.Element {
         'speaker',
         'mic',
         'volume',
-        'stream'
+        'stream',
+        'slider'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1329,7 +1636,8 @@ export function App(): React.JSX.Element {
         k === 'speaker' ||
         k === 'mic' ||
         k === 'volume' ||
-        k === 'stream'
+        k === 'stream' ||
+        k === 'slider'
     )
   }, [hello])
 
@@ -1351,18 +1659,10 @@ export function App(): React.JSX.Element {
           <input
             type="text"
             className="topbar-url"
-            list="discovered-devices"
             value={deviceUrl}
             onChange={(e) => setDeviceUrl(e.target.value)}
             placeholder={DEFAULT_DEVICE_URL}
           />
-          <datalist id="discovered-devices">
-            {(devices ?? []).map((d) => (
-              <option key={d.url} value={d.url}>
-                {d.name}
-              </option>
-            ))}
-          </datalist>
           <button
             onClick={() => void onScan()}
             disabled={scanning}
@@ -1370,6 +1670,29 @@ export function App(): React.JSX.Element {
           >
             {scanning ? 'Scanning…' : 'Scan'}
           </button>
+          {/* A real select, not a datalist: a datalist only offers entries
+              matching the text already in the box, and the box is pre-filled
+              with the last URL, so the other panels never showed. */}
+          {devices && devices.length > 0 && (
+            <select
+              className="topbar-devices"
+              aria-label="Panels found by the last scan"
+              title="Panels found by the last scan. Picking one connects to it."
+              value={matchDevice(devices, deviceUrl)?.url ?? ''}
+              onChange={(e) => onPickDevice(e.target.value)}
+            >
+              <option value="" disabled>
+                {devices.length === 1
+                  ? '1 panel found'
+                  : `${devices.length} panels found`}
+              </option>
+              {devices.map((d) => (
+                <option key={d.url} value={d.url}>
+                  {deviceLabel(d)}
+                </option>
+              ))}
+            </select>
+          )}
           <button onClick={() => void onConnect()}>Connect</button>
           <button className="primary" onClick={() => void onPush()}>
             Push
@@ -1434,6 +1757,32 @@ export function App(): React.JSX.Element {
               {wasmStatus}
             </span>
           )}
+          {connectedUrl !== null && brightness !== null && (
+            <label
+              className="topbar-toggle"
+              title={`Panel backlight brightness (${brightness}%) — stored on the device, survives a reboot`}
+              style={{ minWidth: 110 }}
+            >
+              <span>☀ {brightness}%</span>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={5}
+                value={brightness}
+                onChange={(e) => setBrightnessState(Number(e.target.value))}
+                // pointerup, not mouseup+touchend: a touch dispatches
+                // touchend AND a compatibility mouseup, which would send two
+                // PUTs -- and two NVS writes -- for one release.
+                onPointerUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+                onKeyUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+              />
+            </label>
+          )}
           {shotUrl && (
             <label
               className="topbar-toggle"
@@ -1462,6 +1811,7 @@ export function App(): React.JSX.Element {
             </span>
           )}
           {helloErr && <span className="err">{helloErr}</span>}
+          {brightnessErr && <span className="err">{brightnessErr}</span>}
           {pushErr && <span className="err">{pushErr}</span>}
           {shotErr && <span className="err">{shotErr}</span>}
           {pushResult && (
@@ -1799,6 +2149,20 @@ export function App(): React.JSX.Element {
                     />
                   </label>
                 )}
+              {/* Covers bargroup sub-bar binds too, which have their own
+                  inputs further down. */}
+              {(() => {
+                const nested = bindsOf(selected).filter((b) =>
+                  isNestedBind(b, knownPathSet)
+                )
+                return nested.length > 0 ? (
+                  <p className="muted">
+                    {nested.join(', ')}: reaches into an object value, shown in
+                    the preview only. The panel cannot resolve it, and Push will
+                    refuse the layout.
+                  </p>
+                ) : null
+              })()}
               {selected.type === 'label' && (
                 <label>
                   show description
@@ -1813,7 +2177,9 @@ export function App(): React.JSX.Element {
                   />
                 </label>
               )}
-              {(selected.type === 'arc' || selected.type === 'bar') && (
+              {(selected.type === 'arc' ||
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     min
@@ -1976,11 +2342,9 @@ export function App(): React.JSX.Element {
                           placeholder="signalk.path"
                           title="bind (click in here, then click a path on the right)"
                           onFocus={() => setBindTarget({ barIdx: i })}
-                          onChange={(e) => {
-                            const next = [...selected.bars]
-                            next[i] = { ...b, bind: e.target.value }
-                            updateWidget(selected.id, { bars: next })
-                          }}
+                          onChange={(e) =>
+                            applyBarBind(selected.id, i, e.target.value)
+                          }
                         />
                         <NumberField
                           value={b.min}
@@ -2332,7 +2696,8 @@ export function App(): React.JSX.Element {
               {(selected.type === 'label' ||
                 selected.type === 'value' ||
                 selected.type === 'arc' ||
-                selected.type === 'bar') && (
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     unit
@@ -2561,38 +2926,13 @@ export function App(): React.JSX.Element {
               <GridLayout
                 className="grid"
                 layout={grid}
-                cols={COLS}
-                rowHeight={ROW_HEIGHT}
                 width={displayW}
-                // Force the grid container to fill the full canvas height
-                // (display minus the status overlay strip) so widgets can
-                // be dragged into the lower portion. Without this RGL
-                // auto-sizes to the lowest existing widget's row, which
-                // leaves no drop zone below.
+                // Keep the container at the height maxRows gives it rather
+                // than shrinking to the lowest widget (see gridConfig).
                 autoSize={false}
-                maxRows={Math.floor(
-                  (displayH -
-                    (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
-                    (showTabStrip ? tabStripHeight : 0)) /
-                    ROW_HEIGHT
-                )}
-                // RGL defaults margin=[10,10] and containerPadding=[10,10]
-                // which shift everything down by ~10-20px per widget — the
-                // canvas no longer reflects 1:1 with the device. Zero both
-                // so JSON pixel coords map directly to canvas pixels.
-                margin={[0, 0]}
-                containerPadding={[0, 0]}
-                // The designer must NOT auto-reflow: a drag of one
-                // widget should never displace another. allowOverlap lets
-                // tiles park anywhere; compactType=null disables gravity;
-                // preventCollision=true keeps RGL from pushing siblings.
-                compactType={null}
-                preventCollision={true}
-                allowOverlap={true}
-                // Drag only via the chrome bar (which only appears on
-                // selected widgets), so unselected widgets behave as
-                // pure click targets.
-                draggableHandle=".chrome"
+                gridConfig={gridConfig}
+                dragConfig={DRAG_CONFIG}
+                compactor={FREEFORM_COMPACTOR}
                 onDrag={onDragOrResize}
                 onResize={onDragOrResize}
                 onDragStop={onDragStop}
@@ -2699,72 +3039,8 @@ export function App(): React.JSX.Element {
                   // user last focused: widget-level for most kinds,
                   // a specific sub-bar inside a bargroup.
                   if (bindTarget !== 'widget' && selected.type === 'bargroup') {
-                    const i = bindTarget.barIdx
-                    const target = selected.bars[i]
-                    if (target) {
-                      const next = [...selected.bars]
-                      next[i] = { ...target, bind: p }
-                      updateWidget(selected.id, { bars: next })
-                      // Pre-fetch meta so zone tinting + description
-                      // are live for the sub-bar's bound path too.
-                      // Also auto-fill the sub-bar's display block
-                      // from SK displayUnits — same conversion the
-                      // widget-level bind picker does for label/arc/
-                      // bar/button. Only fills empty/default fields,
-                      // never overwrites a user-set value.
-                      void fetchPathMeta(p).then((meta) => {
-                        if (!meta) return
-                        if (meta.zones && meta.zones.length > 0) {
-                          setPathZones((prev) => {
-                            const nextMap = new Map(prev)
-                            nextMap.set(p, meta.zones!)
-                            return nextMap
-                          })
-                        }
-                        if (meta.description) {
-                          setPathDescriptions((prev) => {
-                            const nextMap = new Map(prev)
-                            nextMap.set(p, meta.description!)
-                            return nextMap
-                          })
-                        }
-                        const d = deriveDisplayDefaults(meta)
-                        if (!d) return
-                        setScreen((prev) => ({
-                          ...prev,
-                          widgets: prev.widgets.map((wid) => {
-                            if (wid.id !== selected.id) return wid
-                            if (wid.type !== 'bargroup') return wid
-                            const bars2 = wid.bars.map((b, j) => {
-                              if (j !== i) return b
-                              const cur = b.display ?? {}
-                              return {
-                                ...b,
-                                display: {
-                                  unit:
-                                    cur.unit && cur.unit !== ''
-                                      ? cur.unit
-                                      : d.unit,
-                                  scale:
-                                    cur.scale !== undefined && cur.scale !== 1
-                                      ? cur.scale
-                                      : d.scale,
-                                  offset:
-                                    cur.offset !== undefined && cur.offset !== 0
-                                      ? cur.offset
-                                      : d.offset,
-                                  decimals:
-                                    cur.decimals !== undefined &&
-                                    cur.decimals !== 1
-                                      ? cur.decimals
-                                      : d.decimals
-                                }
-                              }
-                            })
-                            return { ...wid, bars: bars2 }
-                          })
-                        }))
-                      })
+                    if (selected.bars[bindTarget.barIdx]) {
+                      applyBarBind(selected.id, bindTarget.barIdx, p)
                       return
                     }
                   }
