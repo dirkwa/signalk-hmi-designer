@@ -901,6 +901,10 @@ export function App(): React.JSX.Element {
   // adoptLayout for ordering reasons) can route through the same
   // migration + state-hydration path as Load / Import.
   const adoptLayoutRef = useRef<((l: Layout) => void) | null>(null)
+  // A layout adopted before the path list arrived: its extended binds
+  // resolved literally, so the meta pass has to run again once the
+  // list is there.
+  const pendingMetaRef = useRef<Layout | null>(null)
 
   const copySelected = (): void => {
     const w = screen.widgets.find((x) => x.id === selectedId)
@@ -974,11 +978,11 @@ export function App(): React.JSX.Element {
   const applyBind = (id: string, path: string): void => {
     updateWidget(id, { bind: path })
     if (!path) return
-    // A manually-extended bind (e.g. `bar.foo.thing.value.name` drilling
-    // into a JSON-object-valued path) has no meta of its own — fetch
-    // from the real SK path it extends, but keep prefill/zone state
-    // keyed by the full bind so the wasm bridge (which subjects by the
-    // literal bind string) still gets it under the right key.
+    // An extended bind (`navigation.position.latitude`, reaching into
+    // the leaf's object value) has no meta of its own: fetch the leaf's,
+    // but keep prefill/zone state keyed by the full bind so the wasm
+    // bridge (which subjects by the literal bind string) still gets it
+    // under the right key.
     const { skPath } = resolveBindPath(path, paths)
     void fetchPathMeta(skPath).then((meta) => {
       if (!meta) return
@@ -1193,21 +1197,15 @@ export function App(): React.JSX.Element {
     }
   }
 
-  // Replaces the entire designer state (screens + statusOverlay) with
-  // a loaded Layout. Also re-fetches zones for every bound path so
-  // colors appear immediately.
-  const adoptLayout = (raw: Layout): void => {
-    const l = migrateLayout(raw)
-    setScreens(
-      l.screens.length > 0
-        ? l.screens
-        : [{ id: 'main', title: 'Main', widgets: [] }]
-    )
-    setActiveIdx(0)
-    setSelectedId(null)
-    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
-    if (l.notifications !== undefined) setNotifConfig(l.notifications)
-    if (l.display !== undefined) setDisplayConfig(l.display)
+  // Zones, descriptions and the displayUnits prefill for every bind in
+  // a layout, keyed by the bind string. Extended binds take the meta of
+  // the leaf they reach into, resolved against `knownPaths`.
+  const hydrateLayoutMeta = (
+    l: Layout,
+    knownPaths: readonly string[],
+    onlyExtended = false
+  ): void => {
+    const known = new Set(knownPaths)
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
         for (const p of bindsOf(w)) {
@@ -1216,7 +1214,8 @@ export function App(): React.JSX.Element {
           // prefill back to the right slot without re-traversing
           // the layout.
           const widId = w.id
-          const { skPath } = resolveBindPath(p, paths)
+          const { skPath, fieldPath } = resolveBindPath(p, known)
+          if (onlyExtended && fieldPath.length === 0) continue
           void fetchPathMeta(skPath).then((meta) => {
             if (!meta) return
             if (meta.zones && meta.zones.length > 0) {
@@ -1312,10 +1311,42 @@ export function App(): React.JSX.Element {
       }
     }
   }
+
+  // Replaces the entire designer state (screens + statusOverlay) with
+  // a loaded Layout. Also re-fetches zones for every bound path so
+  // colors appear immediately.
+  const adoptLayout = (raw: Layout): void => {
+    const l = migrateLayout(raw)
+    setScreens(
+      l.screens.length > 0
+        ? l.screens
+        : [{ id: 'main', title: 'Main', widgets: [] }]
+    )
+    setActiveIdx(0)
+    setSelectedId(null)
+    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
+    if (l.notifications !== undefined) setNotifConfig(l.notifications)
+    if (l.display !== undefined) setDisplayConfig(l.display)
+    hydrateLayoutMeta(l, paths)
+    // Boot restore usually beats the self-paths request, and then no
+    // extended bind can resolve; redo the pass when the list lands.
+    if (paths.length === 0) pendingMetaRef.current = l
+  }
   // Expose adoptLayout to the boot-restore effect via the ref. The
   // effect can't call adoptLayout directly because it's declared
   // above this point; the ref bridges the ordering.
   adoptLayoutRef.current = adoptLayout
+
+  // `paths` is the trigger; hydrateLayoutMeta is recreated per render
+  // and reads nothing else that changes.
+  useEffect(() => {
+    const l = pendingMetaRef.current
+    if (!l || paths.length === 0) return
+    pendingMetaRef.current = null
+    // Plain binds were hydrated fine the first time; only the extended
+    // ones resolved to nothing.
+    hydrateLayoutMeta(l, paths, true)
+  }, [paths])
 
   const onSave = async (): Promise<void> => {
     setFileMsg(null)
