@@ -1425,10 +1425,13 @@ export function App(): React.JSX.Element {
     )
     setActiveIdx(0)
     setSelectedId(null)
-    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
-    if (l.notifications !== undefined) setNotifConfig(l.notifications)
-    if (l.display !== undefined) setDisplayConfig(l.display)
-    if (l.theme !== undefined) setThemeConfig(l.theme)
+    // A loaded layout replaces the whole designer state: a block it
+    // omits has to go too, or the previous layout's settings ride along
+    // into this one on the next save or push.
+    setStatusOverlay(l.status_overlay ?? true)
+    setNotifConfig(l.notifications)
+    setDisplayConfig(l.display)
+    setThemeConfig(l.theme)
     hydrateLayoutMeta(l, paths)
   }
   // Expose adoptLayout to the boot-restore effect via the ref. The
