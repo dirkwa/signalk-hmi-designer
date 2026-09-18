@@ -1470,7 +1470,14 @@ export function App(): React.JSX.Element {
     let known: ReadonlySet<string>
     try {
       const req = pathsRequest.current ?? loadPaths()
-      known = new Set(await req.catch(() => loadPaths()))
+      known = new Set(
+        await req.catch(() => {
+          // Another push may already have started the retry; share it
+          // rather than fetching the whole self tree once per click.
+          const latest = pathsRequest.current
+          return latest && latest !== req ? latest : loadPaths()
+        })
+      )
     } catch {
       setPushErr(
         'Could not load the SignalK path list, so binds cannot be ' +
