@@ -45,6 +45,7 @@ Toggle with the **WASM / Mirror** buttons above the canvas.
 | `bargroup`      | Multiple labelled bars under one caption (e.g. SAIL TRIM / battery banks). Each sub-bar binds + zones independently. Signed ranges anchor at zero.                    |
 | `button`        | Momentary action button: `press_value` PUT on press, optional `release_value` on release, optional `hold_ms` for hold-to-act. Optional fixed `bg_color` / `fg_color`. |
 | `notifications` | Scrolling list of pending notifications from `notifications.*`. State-tinted rows, configurable columns. Tap a row to ACK.                                            |
+| `slider`        | Draggable slider that reads and writes a SignalK path (`min`/`max`, `display.scale`/`offset`). Bind `@brightness` instead of a path and it becomes the panel's own backlight control, 5–100 %, the same setting as the toolbar's brightness slider. |
 
 Common fields: `id`, `type`, `x`, `y`, `w`, `h`, `label`, `bind`, `display { unit, scale, offset, decimals, font_size }`, `bg_color`, `fg_color`.
 Per-kind extras live in [webapp/src/schema.ts](webapp/src/schema.ts).
