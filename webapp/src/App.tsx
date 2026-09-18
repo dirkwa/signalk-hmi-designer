@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
+import GridLayout, {
+  getCompactor,
+  type LayoutItem as GLLayout
+} from 'react-grid-layout'
 import {
   DndContext,
   PointerSensor,
@@ -71,6 +74,20 @@ declare const __PLUGIN_VERSION__: string
 const COLS = 24
 const ROW_HEIGHT = 25
 const ROW_PX_H = ROW_HEIGHT
+
+// react-grid-layout 2 takes its settings as config objects instead of
+// flat props. The ones that never change live here so their identity is
+// stable across renders.
+//
+// The designer must NOT auto-reflow: a drag of one widget should never
+// displace another. No compaction disables gravity, and allowing overlap
+// lets tiles park anywhere without pushing their siblings.
+const FREEFORM_COMPACTOR = getCompactor(null, true)
+// Drag only via the chrome bar (which only appears on selected widgets),
+// so unselected widgets behave as pure click targets. The library's
+// default 3px drag threshold is left on, so a click on the bar is never
+// taken for a drag.
+const DRAG_CONFIG = { handle: '.chrome' } as const
 // Fallback width used before a device has connected (hello not loaded
 // yet). 1024 matches the Waveshare 7B which we develop against.
 const DEFAULT_DISPLAY_W = 1024
@@ -659,6 +676,33 @@ export function App(): React.JSX.Element {
     [screen.widgets, colPxW]
   )
 
+  // Rows that fit the canvas: the display minus the status overlay strip
+  // and the tab strip. With autoSize off this makes the grid container
+  // fill the full canvas height, so widgets can be dragged into the lower
+  // portion; otherwise RGL sizes itself to the lowest existing widget's
+  // row, which leaves no drop zone below.
+  const maxRows = Math.floor(
+    (displayH -
+      (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
+      (showTabStrip ? tabStripHeight : 0)) /
+      ROW_HEIGHT
+  )
+  // RGL defaults margin and containerPadding to [10,10], which shifts
+  // everything by 10-20px per widget, and the canvas no longer reflects
+  // the device 1:1. Zero both so JSON pixel coords map directly to canvas
+  // pixels. Memoized: a fresh object each render would look like a config
+  // change to the grid.
+  const gridConfig = useMemo(
+    () => ({
+      cols: COLS,
+      rowHeight: ROW_HEIGHT,
+      margin: [0, 0] as const,
+      containerPadding: [0, 0] as const,
+      maxRows
+    }),
+    [maxRows]
+  )
+
   // Effective layout for the WASM canvas: layoutDoc with the
   // currently-dragging widget's coords overridden from dragPreview
   // so the wasm render moves in real-time as the user drags. When
@@ -721,11 +765,12 @@ export function App(): React.JSX.Element {
   // — and writing those back to state grid-quantizes pixel positions,
   // drifting widgets over time.
   const onDragStop = (
-    _layout: GLLayout[],
-    _oldItem: GLLayout,
-    newItem: GLLayout
+    _layout: readonly GLLayout[],
+    _oldItem: GLLayout | null,
+    newItem: GLLayout | null
   ): void => {
     setDragPreview(null)
+    if (!newItem) return
     setScreen((prev) => ({
       ...prev,
       widgets: prev.widgets.map((w) =>
@@ -744,10 +789,11 @@ export function App(): React.JSX.Element {
   // while SVG mode (which already updates from screens state)
   // sees no behaviour change.
   const onDragOrResize = (
-    _layout: GLLayout[],
-    _oldItem: GLLayout,
-    newItem: GLLayout
+    _layout: readonly GLLayout[],
+    _oldItem: GLLayout | null,
+    newItem: GLLayout | null
   ): void => {
+    if (!newItem) return
     setDragPreview({ id: newItem.i, grid: newItem })
   }
 
@@ -2604,38 +2650,13 @@ export function App(): React.JSX.Element {
               <GridLayout
                 className="grid"
                 layout={grid}
-                cols={COLS}
-                rowHeight={ROW_HEIGHT}
                 width={displayW}
-                // Force the grid container to fill the full canvas height
-                // (display minus the status overlay strip) so widgets can
-                // be dragged into the lower portion. Without this RGL
-                // auto-sizes to the lowest existing widget's row, which
-                // leaves no drop zone below.
+                // Keep the container at the height maxRows gives it rather
+                // than shrinking to the lowest widget (see gridConfig).
                 autoSize={false}
-                maxRows={Math.floor(
-                  (displayH -
-                    (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
-                    (showTabStrip ? tabStripHeight : 0)) /
-                    ROW_HEIGHT
-                )}
-                // RGL defaults margin=[10,10] and containerPadding=[10,10]
-                // which shift everything down by ~10-20px per widget — the
-                // canvas no longer reflects 1:1 with the device. Zero both
-                // so JSON pixel coords map directly to canvas pixels.
-                margin={[0, 0]}
-                containerPadding={[0, 0]}
-                // The designer must NOT auto-reflow: a drag of one
-                // widget should never displace another. allowOverlap lets
-                // tiles park anywhere; compactType=null disables gravity;
-                // preventCollision=true keeps RGL from pushing siblings.
-                compactType={null}
-                preventCollision={true}
-                allowOverlap={true}
-                // Drag only via the chrome bar (which only appears on
-                // selected widgets), so unselected widgets behave as
-                // pure click targets.
-                draggableHandle=".chrome"
+                gridConfig={gridConfig}
+                dragConfig={DRAG_CONFIG}
+                compactor={FREEFORM_COMPACTOR}
                 onDrag={onDragOrResize}
                 onResize={onDragOrResize}
                 onDragStop={onDragStop}
