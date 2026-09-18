@@ -1,32 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchNotifications,
+  getNestedField,
   resolveBindPath,
-  type NotificationRow
+  type NotificationRow,
+  type SkValue
 } from './api'
 
-export type SkValue = number | string | boolean | null
-
-/** Drill into a delta's raw value using the extra dotted segments a
- *  manually-extended bind reaches past its real SK path (see
- *  `resolveBindPath`). Returns null for anything past the last object
- *  layer or for a non-scalar leaf — matching kinds are what
- *  `pushAllValues` already handles for pushed data. */
-function getNestedField(value: unknown, fieldPath: string[]): SkValue {
-  let cur: unknown = value
-  for (const key of fieldPath) {
-    if (cur === null || typeof cur !== 'object') return null
-    cur = (cur as Record<string, unknown>)[key]
-  }
-  if (
-    typeof cur === 'number' ||
-    typeof cur === 'string' ||
-    typeof cur === 'boolean'
-  ) {
-    return cur
-  }
-  return null
-}
+export type { SkValue } from './api'
 
 interface DeltaMessage {
   context?: string
@@ -44,15 +25,14 @@ interface DeltaMessage {
  * widgets that get newly-bound paths start receiving data on next
  * delta (without reconnecting).
  *
- * `paths` are widget binds, not necessarily real SK paths verbatim —
- * a bind may manually reach past a real SK leaf into a JSON object
- * field (`bar.foo.thing.value.name`). `knownSkPaths` (the live
- * self-paths list) is used to split each bind into the real SK path
- * to subscribe to plus the extra dotted segments to resolve
- * client-side once a delta for the parent path arrives — see
- * `resolveBindPath`. The returned map is still keyed by the original
- * bind string, so callers (zone matching, the wasm subject push)
- * don't need to know a bind was extended.
+ * `paths` are widget binds, not necessarily real SK paths verbatim:
+ * a bind may reach past a leaf into a field of its object value
+ * (`navigation.position.latitude`). `knownSkPaths` (the live
+ * self-paths list) splits each bind into the real SK path to
+ * subscribe to plus the extra dotted segments to read from each delta
+ * for that path, see `resolveBindPath`. The returned map is still
+ * keyed by the original bind string, so callers (zone matching, the
+ * wasm subject push) don't need to know a bind was extended.
  *
  * Re-renders are coalesced via setState's microtask batching, which is
  * fine at the typical SK delta rate. If we ever sustain >100 deltas/s
@@ -65,13 +45,19 @@ export function useSkValues(
   const [values, setValues] = useState<Map<string, SkValue>>(() => new Map())
   const wsRef = useRef<WebSocket | null>(null)
 
-  const resolved = paths.map((bind) => ({
-    bind,
-    ...resolveBindPath(bind, knownSkPaths)
-  }))
-  // Stable serialization so the effect only re-runs when the actual
-  // set of subscribed SK paths, or the bind->field mapping, changes —
-  // not on every array/knownSkPaths reference change.
+  // Resolve once per change of either input, not on every render: the
+  // hook re-renders on every delta, and the known-path list is the
+  // whole self tree.
+  const resolved = useMemo(() => {
+    const known = new Set(knownSkPaths)
+    return paths.map((bind) => ({ bind, ...resolveBindPath(bind, known) }))
+  }, [paths, knownSkPaths])
+  // Serialized keys drive the effect, not the arrays: an unrelated
+  // screen edit hands in a fresh `paths` array with the same contents,
+  // and that must not reconnect. A change in the bind->field mapping
+  // does reconnect on purpose: SignalK sends the current value on
+  // subscribe, so a bind added onto an already-subscribed path gets a
+  // value at once instead of waiting for the next change.
   const skPathsKey = [...new Set(resolved.map((r) => r.skPath))]
     .sort()
     .join('|')
@@ -80,15 +66,11 @@ export function useSkValues(
     .sort()
     .join('\n')
 
-  // The message handler needs the current bind->field mapping but
-  // shouldn't itself force a reconnect when only fieldPaths change
-  // without the subscribed SK path set changing — a ref keeps it
-  // fresh without adding to the effect's deps.
-  const resolvedRef = useRef(resolved)
-  resolvedRef.current = resolved
-
   useEffect(() => {
     if (!skPathsKey) return undefined
+    // The keys fully determine this mapping, so the one captured here
+    // stays equivalent until the effect re-runs.
+    const mapping = resolved
     const url = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${
       location.host
     }/signalk/v1/stream?subscribe=none`
@@ -121,7 +103,7 @@ export function useSkValues(
         let next: Map<string, SkValue> | null = null
         for (const u of msg.updates ?? []) {
           for (const v of u.values ?? []) {
-            for (const r of resolvedRef.current) {
+            for (const r of mapping) {
               if (r.skPath !== v.path) continue
               if (next === null) next = new Map(prev)
               next.set(
