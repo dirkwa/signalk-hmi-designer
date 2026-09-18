@@ -920,10 +920,6 @@ export function App(): React.JSX.Element {
   // adoptLayout for ordering reasons) can route through the same
   // migration + state-hydration path as Load / Import.
   const adoptLayoutRef = useRef<((l: Layout) => void) | null>(null)
-  // A layout adopted before the path list arrived: its extended binds
-  // resolved literally, so the meta pass has to run again once the
-  // list is there.
-  const pendingMetaRef = useRef<Layout | null>(null)
 
   const copySelected = (): void => {
     const w = screen.widgets.find((x) => x.id === selectedId)
@@ -1415,24 +1411,22 @@ export function App(): React.JSX.Element {
     if (l.notifications !== undefined) setNotifConfig(l.notifications)
     if (l.display !== undefined) setDisplayConfig(l.display)
     hydrateLayoutMeta(l, paths)
-    // Boot restore usually beats the self-paths request, and then no
-    // extended bind can resolve; redo the pass when the list lands.
-    if (paths.length === 0) pendingMetaRef.current = l
   }
   // Expose adoptLayout to the boot-restore effect via the ref. The
   // effect can't call adoptLayout directly because it's declared
   // above this point; the ref bridges the ordering.
   adoptLayoutRef.current = adoptLayout
 
-  // `paths` is the trigger; hydrateLayoutMeta is recreated per render
-  // and reads nothing else that changes.
+  // An extended bind can only resolve once the self-paths list is
+  // there, and both the boot restore and a bind typed early beat that
+  // request. When the list lands, hydrate the extended binds of
+  // whatever layout is current, from any source: restored, loaded or
+  // typed. Plain binds were hydrated fine the first time, so only the
+  // extended ones are fetched. `paths` is the trigger; the rest is
+  // read from this render on purpose.
   useEffect(() => {
-    const l = pendingMetaRef.current
-    if (!l || paths.length === 0) return
-    pendingMetaRef.current = null
-    // Plain binds were hydrated fine the first time; only the extended
-    // ones resolved to nothing.
-    hydrateLayoutMeta(l, paths, true)
+    if (paths.length === 0) return
+    hydrateLayoutMeta(layoutDoc, paths, true)
   }, [paths])
 
   const onSave = async (): Promise<void> => {

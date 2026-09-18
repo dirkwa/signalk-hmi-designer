@@ -99,8 +99,9 @@ For widgets that bind **multiple** SK paths (`bargroup`, `list`):
   `api.ts` splits it into the leaf to subscribe to and fetch meta for
   plus the field path `getNestedField` reads from each delta; the
   value map stays keyed by the full bind. Resolution needs the
-  self-paths list, so a layout adopted before it loads is hydrated
-  again when it arrives (`pendingMetaRef`). The panel firmware
+  self-paths list, so when it arrives an effect on `paths` re-hydrates
+  the extended binds of the current layout, whether restored, loaded
+  or typed before then. The panel firmware
   subscribes binds literally, so `onPush` refuses a layout with a
   nested bind (`isNestedBind`), after awaiting the self-paths request
   (`pathsRequest`, retried once on failure) since an empty list
