@@ -44,9 +44,11 @@ import {
   fetchBrightness,
   fetchScreenshot,
   fetchSelfPaths,
+  isNestedBind,
   loadSavedLayout,
   matchDevice,
   pushLayout,
+  resolveBindPath,
   saveLayout,
   sortDevices,
   setBrightness,
@@ -460,6 +462,7 @@ export function App(): React.JSX.Element {
   const [connectedUrl, setConnectedUrl] = useState<string | null>(null)
 
   const [paths, setPaths] = useState<string[]>([])
+  const knownPathSet = useMemo(() => new Set(paths), [paths])
   const [pathFilter, setPathFilter] = useState<string>('')
 
   const [screens, setScreens] = useState<Screen[]>([
@@ -551,10 +554,27 @@ export function App(): React.JSX.Element {
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
+  // The in-flight (or settled) self-paths request. Push awaits it so a
+  // push right after load still gets its binds checked, and retries it
+  // once after a failure instead of trusting an empty list.
+  const pathsRequest = useRef<Promise<string[]> | null>(null)
+  const loadPaths = (): Promise<string[]> => {
+    const req = fetchSelfPaths()
+      .then((p) => {
+        setPaths(p)
+        return p
+      })
+      .catch((e: unknown) => {
+        setPaths([])
+        throw e
+      })
+    pathsRequest.current = req
+    return req
+  }
   useEffect(() => {
-    void fetchSelfPaths()
-      .then(setPaths)
-      .catch(() => setPaths([]))
+    loadPaths().catch(() => {
+      /* surfaced by whatever needs the list, e.g. onPush */
+    })
   }, [])
 
   // Restore previously-saved layout on first mount. Hydrates all
@@ -727,7 +747,7 @@ export function App(): React.JSX.Element {
     () => screens.flatMap((s) => s.widgets.flatMap(bindsOf)),
     [screens]
   )
-  const skValues = useSkValues(boundPaths)
+  const skValues = useSkValues(boundPaths, paths)
 
   // Notifications widgets are fed by polling SK's notifications.*
   // tree. Only poll if a layout actually uses a notifications widget
@@ -973,7 +993,13 @@ export function App(): React.JSX.Element {
   const applyBind = (id: string, path: string): void => {
     updateWidget(id, { bind: path })
     if (!path) return
-    void fetchPathMeta(path).then((meta) => {
+    // An extended bind (`navigation.position.latitude`, reaching into
+    // the leaf's object value) has no meta of its own: fetch the leaf's,
+    // but keep prefill/zone state keyed by the full bind so the wasm
+    // bridge (which subjects by the literal bind string) still gets it
+    // under the right key.
+    const { skPath } = resolveBindPath(path, paths)
+    void fetchPathMeta(skPath).then((meta) => {
       if (!meta) return
       if (meta.zones && meta.zones.length > 0) {
         setPathZones((prev) => {
@@ -1021,6 +1047,74 @@ export function App(): React.JSX.Element {
                 : d.decimals
           }
           return { ...w, display: merged } as Widget
+        })
+      }))
+    })
+  }
+
+  // Sub-bar counterpart of applyBind: bind the i-th bar of a bargroup
+  // and hydrate its zones, description and display defaults the same
+  // way, whether the path was picked from the list or typed.
+  const applyBarBind = (id: string, i: number, bind: string): void => {
+    setScreen((prev) => ({
+      ...prev,
+      widgets: prev.widgets.map((w) => {
+        if (w.id !== id || w.type !== 'bargroup') return w
+        return {
+          ...w,
+          bars: w.bars.map((b, j) => (j === i ? { ...b, bind } : b))
+        }
+      })
+    }))
+    if (!bind) return
+    const { skPath } = resolveBindPath(bind, paths)
+    void fetchPathMeta(skPath).then((meta) => {
+      if (!meta) return
+      if (meta.zones && meta.zones.length > 0) {
+        setPathZones((prev) => {
+          const next = new Map(prev)
+          next.set(bind, meta.zones!)
+          return next
+        })
+      }
+      if (meta.description) {
+        setPathDescriptions((prev) => {
+          const next = new Map(prev)
+          next.set(bind, meta.description!)
+          return next
+        })
+      }
+      // Only fills empty/default fields, never a user-set value.
+      const d = deriveDisplayDefaults(meta)
+      if (!d) return
+      setScreen((prev) => ({
+        ...prev,
+        widgets: prev.widgets.map((wid) => {
+          if (wid.id !== id || wid.type !== 'bargroup') return wid
+          const bars2 = wid.bars.map((b, j) => {
+            // The bind may have been retyped before the fetch resolved.
+            if (j !== i || b.bind !== bind) return b
+            const cur = b.display ?? {}
+            return {
+              ...b,
+              display: {
+                unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                scale:
+                  cur.scale !== undefined && cur.scale !== 1
+                    ? cur.scale
+                    : d.scale,
+                offset:
+                  cur.offset !== undefined && cur.offset !== 0
+                    ? cur.offset
+                    : d.offset,
+                decimals:
+                  cur.decimals !== undefined && cur.decimals !== 1
+                    ? cur.decimals
+                    : d.decimals
+              }
+            }
+          })
+          return { ...wid, bars: bars2 }
         })
       }))
     })
@@ -1186,21 +1280,15 @@ export function App(): React.JSX.Element {
     }
   }
 
-  // Replaces the entire designer state (screens + statusOverlay) with
-  // a loaded Layout. Also re-fetches zones for every bound path so
-  // colors appear immediately.
-  const adoptLayout = (raw: Layout): void => {
-    const l = migrateLayout(raw)
-    setScreens(
-      l.screens.length > 0
-        ? l.screens
-        : [{ id: 'main', title: 'Main', widgets: [] }]
-    )
-    setActiveIdx(0)
-    setSelectedId(null)
-    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
-    if (l.notifications !== undefined) setNotifConfig(l.notifications)
-    if (l.display !== undefined) setDisplayConfig(l.display)
+  // Zones, descriptions and the displayUnits prefill for every bind in
+  // a layout, keyed by the bind string. Extended binds take the meta of
+  // the leaf they reach into, resolved against `knownPaths`.
+  const hydrateLayoutMeta = (
+    l: Layout,
+    knownPaths: readonly string[],
+    onlyExtended = false
+  ): void => {
+    const known = new Set(knownPaths)
     for (const scr of l.screens) {
       for (const w of scr.widgets) {
         for (const p of bindsOf(w)) {
@@ -1209,7 +1297,9 @@ export function App(): React.JSX.Element {
           // prefill back to the right slot without re-traversing
           // the layout.
           const widId = w.id
-          void fetchPathMeta(p).then((meta) => {
+          const { skPath, fieldPath } = resolveBindPath(p, known)
+          if (onlyExtended && fieldPath.length === 0) continue
+          void fetchPathMeta(skPath).then((meta) => {
             if (!meta) return
             if (meta.zones && meta.zones.length > 0) {
               setPathZones((prev) => {
@@ -1304,10 +1394,40 @@ export function App(): React.JSX.Element {
       }
     }
   }
+
+  // Replaces the entire designer state (screens + statusOverlay) with
+  // a loaded Layout. Also re-fetches zones for every bound path so
+  // colors appear immediately.
+  const adoptLayout = (raw: Layout): void => {
+    const l = migrateLayout(raw)
+    setScreens(
+      l.screens.length > 0
+        ? l.screens
+        : [{ id: 'main', title: 'Main', widgets: [] }]
+    )
+    setActiveIdx(0)
+    setSelectedId(null)
+    if (l.status_overlay !== undefined) setStatusOverlay(l.status_overlay)
+    if (l.notifications !== undefined) setNotifConfig(l.notifications)
+    if (l.display !== undefined) setDisplayConfig(l.display)
+    hydrateLayoutMeta(l, paths)
+  }
   // Expose adoptLayout to the boot-restore effect via the ref. The
   // effect can't call adoptLayout directly because it's declared
   // above this point; the ref bridges the ordering.
   adoptLayoutRef.current = adoptLayout
+
+  // An extended bind can only resolve once the self-paths list is
+  // there, and both the boot restore and a bind typed early beat that
+  // request. When the list lands, hydrate the extended binds of
+  // whatever layout is current, from any source: restored, loaded or
+  // typed. Plain binds were hydrated fine the first time, so only the
+  // extended ones are fetched. `paths` is the trigger; the rest is
+  // read from this render on purpose.
+  useEffect(() => {
+    if (paths.length === 0) return
+    hydrateLayoutMeta(layoutDoc, paths, true)
+  }, [paths])
 
   const onSave = async (): Promise<void> => {
     setFileMsg(null)
@@ -1400,6 +1520,45 @@ export function App(): React.JSX.Element {
           : `Cannot read a version from the device firmware string ` +
               `${hello.firmware ?? '(none reported)'}. GET /hello must report ` +
               `a firmware ending in MAJOR.MINOR.PATCH (a -suffix is fine).`
+      )
+      return
+    }
+    // The preview resolves a nested bind client-side, but the layout
+    // reaches the panel with the bind as typed, and the firmware
+    // subscribes to it literally: the widget would show nothing. Refuse
+    // rather than push a layout that is broken on the device. Telling a
+    // nested bind from a leaf needs the self-paths list, so wait for it
+    // and refuse as well when it cannot be had.
+    let known: ReadonlySet<string>
+    try {
+      const req = pathsRequest.current ?? loadPaths()
+      known = new Set(
+        await req.catch(() => {
+          // Another push may already have started the retry; share it
+          // rather than fetching the whole self tree once per click.
+          const latest = pathsRequest.current
+          return latest && latest !== req ? latest : loadPaths()
+        })
+      )
+    } catch {
+      setPushErr(
+        'Could not load the SignalK path list, so binds cannot be ' +
+          'checked before pushing. Check the server connection and try again.'
+      )
+      return
+    }
+    const nested = layoutDoc.screens.flatMap((s) =>
+      s.widgets.flatMap((w) =>
+        bindsOf(w)
+          .filter((b) => isNestedBind(b, known))
+          .map((b) => `${w.id}: ${b}`)
+      )
+    )
+    if (nested.length > 0) {
+      setPushErr(
+        'The panel cannot resolve a bind that reaches into an object ' +
+          'value; it subscribes to binds as literal SignalK paths. Bind ' +
+          `to the parent path or remove the field first: ${nested.join(', ')}`
       )
       return
     }
@@ -1885,6 +2044,20 @@ export function App(): React.JSX.Element {
                     />
                   </label>
                 )}
+              {/* Covers bargroup sub-bar binds too, which have their own
+                  inputs further down. */}
+              {(() => {
+                const nested = bindsOf(selected).filter((b) =>
+                  isNestedBind(b, knownPathSet)
+                )
+                return nested.length > 0 ? (
+                  <p className="muted">
+                    {nested.join(', ')}: reaches into an object value, shown in
+                    the preview only. The panel cannot resolve it, and Push will
+                    refuse the layout.
+                  </p>
+                ) : null
+              })()}
               {selected.type === 'label' && (
                 <label>
                   show description
@@ -2064,11 +2237,9 @@ export function App(): React.JSX.Element {
                           placeholder="signalk.path"
                           title="bind (click in here, then click a path on the right)"
                           onFocus={() => setBindTarget({ barIdx: i })}
-                          onChange={(e) => {
-                            const next = [...selected.bars]
-                            next[i] = { ...b, bind: e.target.value }
-                            updateWidget(selected.id, { bars: next })
-                          }}
+                          onChange={(e) =>
+                            applyBarBind(selected.id, i, e.target.value)
+                          }
                         />
                         <NumberField
                           value={b.min}
@@ -2763,72 +2934,8 @@ export function App(): React.JSX.Element {
                   // user last focused: widget-level for most kinds,
                   // a specific sub-bar inside a bargroup.
                   if (bindTarget !== 'widget' && selected.type === 'bargroup') {
-                    const i = bindTarget.barIdx
-                    const target = selected.bars[i]
-                    if (target) {
-                      const next = [...selected.bars]
-                      next[i] = { ...target, bind: p }
-                      updateWidget(selected.id, { bars: next })
-                      // Pre-fetch meta so zone tinting + description
-                      // are live for the sub-bar's bound path too.
-                      // Also auto-fill the sub-bar's display block
-                      // from SK displayUnits — same conversion the
-                      // widget-level bind picker does for label/arc/
-                      // bar/button. Only fills empty/default fields,
-                      // never overwrites a user-set value.
-                      void fetchPathMeta(p).then((meta) => {
-                        if (!meta) return
-                        if (meta.zones && meta.zones.length > 0) {
-                          setPathZones((prev) => {
-                            const nextMap = new Map(prev)
-                            nextMap.set(p, meta.zones!)
-                            return nextMap
-                          })
-                        }
-                        if (meta.description) {
-                          setPathDescriptions((prev) => {
-                            const nextMap = new Map(prev)
-                            nextMap.set(p, meta.description!)
-                            return nextMap
-                          })
-                        }
-                        const d = deriveDisplayDefaults(meta)
-                        if (!d) return
-                        setScreen((prev) => ({
-                          ...prev,
-                          widgets: prev.widgets.map((wid) => {
-                            if (wid.id !== selected.id) return wid
-                            if (wid.type !== 'bargroup') return wid
-                            const bars2 = wid.bars.map((b, j) => {
-                              if (j !== i) return b
-                              const cur = b.display ?? {}
-                              return {
-                                ...b,
-                                display: {
-                                  unit:
-                                    cur.unit && cur.unit !== ''
-                                      ? cur.unit
-                                      : d.unit,
-                                  scale:
-                                    cur.scale !== undefined && cur.scale !== 1
-                                      ? cur.scale
-                                      : d.scale,
-                                  offset:
-                                    cur.offset !== undefined && cur.offset !== 0
-                                      ? cur.offset
-                                      : d.offset,
-                                  decimals:
-                                    cur.decimals !== undefined &&
-                                    cur.decimals !== 1
-                                      ? cur.decimals
-                                      : d.decimals
-                                }
-                              }
-                            })
-                            return { ...wid, bars: bars2 }
-                          })
-                        }))
-                      })
+                    if (selected.bars[bindTarget.barIdx]) {
+                      applyBarBind(selected.id, bindTarget.barIdx, p)
                       return
                     }
                   }

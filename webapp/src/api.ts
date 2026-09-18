@@ -228,6 +228,80 @@ export interface DisplayDefaults {
   decimals: number
 }
 
+export type SkValue = number | string | boolean | null
+
+/**
+ * Split a widget bind that reaches past a SignalK leaf into a field of
+ * that leaf's object value. `navigation.position` is a leaf whose value
+ * is `{latitude, longitude}`; the bind `navigation.position.latitude`
+ * resolves to `skPath: 'navigation.position'` (what to subscribe to and
+ * fetch meta for) and `fieldPath: ['latitude']` (what to read from each
+ * delta's value, see `getNestedField`). The segments address the value
+ * itself, not the REST envelope around it, so `.value.` is never part
+ * of a bind.
+ *
+ * Matches against the longest known SK path that is a dot-segment
+ * prefix of `bind` (never a substring split mid-segment). Falls back
+ * to treating the whole bind as a literal SK path, with no extra
+ * field, when it is an exact known path, when `knownPaths` is empty
+ * (not loaded yet), or when nothing matches, which reproduces the
+ * pre-existing behaviour for ordinary binds.
+ *
+ * Pass a `Set` when resolving many binds against the same path list,
+ * so it is built once rather than per bind.
+ */
+export function resolveBindPath(
+  bind: string,
+  knownPaths: readonly string[] | ReadonlySet<string>
+): { skPath: string; fieldPath: string[] } {
+  if (!bind) return { skPath: bind, fieldPath: [] }
+  const known = knownPaths instanceof Set ? knownPaths : new Set(knownPaths)
+  if (known.has(bind)) return { skPath: bind, fieldPath: [] }
+  const segments = bind.split('.')
+  for (let i = segments.length - 1; i > 0; i--) {
+    const prefix = segments.slice(0, i).join('.')
+    if (known.has(prefix)) {
+      return { skPath: prefix, fieldPath: segments.slice(i) }
+    }
+  }
+  return { skPath: bind, fieldPath: [] }
+}
+
+/** True when `bind` reaches into an object value rather than naming a
+ *  SignalK leaf. The designer resolves such a bind client-side; the
+ *  panel firmware subscribes to binds literally and cannot. */
+export function isNestedBind(
+  bind: string,
+  knownPaths: readonly string[] | ReadonlySet<string>
+): boolean {
+  return resolveBindPath(bind, knownPaths).fieldPath.length > 0
+}
+
+/**
+ * Read the field a resolved bind's `fieldPath` names from a delta
+ * value. Null past the last object layer or for a non-scalar leaf;
+ * scalars are the kinds `pushAllValues` already handles for pushed
+ * data.
+ */
+export function getNestedField(
+  value: unknown,
+  fieldPath: readonly string[]
+): SkValue {
+  let cur: unknown = value
+  for (const key of fieldPath) {
+    if (cur === null || typeof cur !== 'object') return null
+    cur = (cur as Record<string, unknown>)[key]
+  }
+  if (
+    typeof cur === 'number' ||
+    typeof cur === 'string' ||
+    typeof cur === 'boolean'
+  ) {
+    return cur
+  }
+  return null
+}
+
 /** Fetch metadata for a SK path. Returns null on 404 / non-200. */
 export async function fetchPathMeta(skPath: string): Promise<PathMeta | null> {
   // Sentinel binds (`@drop_here`) are local device actions, not SignalK
