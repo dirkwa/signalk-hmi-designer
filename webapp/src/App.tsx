@@ -44,6 +44,7 @@ import {
   fetchBrightness,
   fetchScreenshot,
   fetchSelfPaths,
+  isNestedBind,
   loadSavedLayout,
   matchDevice,
   pushLayout,
@@ -461,6 +462,7 @@ export function App(): React.JSX.Element {
   const [connectedUrl, setConnectedUrl] = useState<string | null>(null)
 
   const [paths, setPaths] = useState<string[]>([])
+  const knownPathSet = useMemo(() => new Set(paths), [paths])
   const [pathFilter, setPathFilter] = useState<string>('')
 
   const [screens, setScreens] = useState<Screen[]>([
@@ -1442,6 +1444,25 @@ export function App(): React.JSX.Element {
       )
       return
     }
+    // The preview resolves a nested bind client-side, but the layout
+    // reaches the panel with the bind as typed, and the firmware
+    // subscribes to it literally: the widget would show nothing. Refuse
+    // rather than push a layout that is broken on the device.
+    const nested = layoutDoc.screens.flatMap((s) =>
+      s.widgets.flatMap((w) =>
+        bindsOf(w)
+          .filter((b) => isNestedBind(b, knownPathSet))
+          .map((b) => `${w.id}: ${b}`)
+      )
+    )
+    if (nested.length > 0) {
+      setPushErr(
+        'The panel cannot resolve a bind that reaches into an object ' +
+          'value; it subscribes to binds as literal SignalK paths. Bind ' +
+          `to the parent path or remove the field first: ${nested.join(', ')}`
+      )
+      return
+    }
     try {
       const r = await pushLayout(deviceUrl, layoutDoc)
       setPushResult(r)
@@ -1922,6 +1943,13 @@ export function App(): React.JSX.Element {
                       onFocus={() => setBindTarget('widget')}
                       onChange={(e) => applyBind(selected.id, e.target.value)}
                     />
+                    {isNestedBind(selected.bind ?? '', knownPathSet) && (
+                      <span className="muted">
+                        reaches into an object value: shown in the preview only.
+                        The panel cannot resolve it, and Push will refuse the
+                        layout.
+                      </span>
+                    )}
                   </label>
                 )}
               {selected.type === 'label' && (

@@ -267,6 +267,16 @@ export function resolveBindPath(
   return { skPath: bind, fieldPath: [] }
 }
 
+/** True when `bind` reaches into an object value rather than naming a
+ *  SignalK leaf. The designer resolves such a bind client-side; the
+ *  panel firmware subscribes to binds literally and cannot. */
+export function isNestedBind(
+  bind: string,
+  knownPaths: readonly string[] | ReadonlySet<string>
+): boolean {
+  return resolveBindPath(bind, knownPaths).fieldPath.length > 0
+}
+
 /**
  * Read the field a resolved bind's `fieldPath` names from a delta
  * value. Null past the last object layer or for a non-scalar leaf;

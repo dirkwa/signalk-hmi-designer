@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { getNestedField, resolveBindPath } from '../webapp/src/api'
+import {
+  getNestedField,
+  isNestedBind,
+  resolveBindPath
+} from '../webapp/src/api'
 
 describe('resolveBindPath', () => {
   const knownPaths = [
@@ -77,6 +81,28 @@ describe('resolveBindPath', () => {
       skPath: 'bar.foo.thing',
       fieldPath: []
     })
+  })
+})
+
+describe('isNestedBind', () => {
+  const known = new Set([
+    'navigation.position',
+    'environment.depth.belowTransducer'
+  ])
+
+  it('flags a bind that reaches into an object value', () => {
+    expect(isNestedBind('navigation.position.latitude', known)).toBe(true)
+  })
+
+  it('leaves a leaf, an unknown path and an empty bind alone', () => {
+    expect(isNestedBind('navigation.position', known)).toBe(false)
+    expect(isNestedBind('environment.depth.belowTransducer', known)).toBe(false)
+    expect(isNestedBind('totally.unknown.path', known)).toBe(false)
+    expect(isNestedBind('', known)).toBe(false)
+  })
+
+  it('cannot tell before the path list has loaded', () => {
+    expect(isNestedBind('navigation.position.latitude', [])).toBe(false)
   })
 })
 

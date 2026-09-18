@@ -100,7 +100,11 @@ For widgets that bind **multiple** SK paths (`bargroup`, `list`):
   plus the field path `getNestedField` reads from each delta; the
   value map stays keyed by the full bind. Resolution needs the
   self-paths list, so a layout adopted before it loads is hydrated
-  again when it arrives (`pendingMetaRef`).
+  again when it arrives (`pendingMetaRef`). The panel firmware
+  subscribes binds literally, so `onPush` refuses a layout with a
+  nested bind (`isNestedBind`) and the inspector says so under the
+  bind field; lift that once the firmware resolves nested fields and
+  advertises it in `/hello`.
 - For path-picker UX, set `bindTarget` to point at the focused field
   (`{barIdx: i}`) on input focus, route the click in the right-hand
   panel accordingly. Reset `bindTarget` to `'widget'` whenever
