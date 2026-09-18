@@ -99,12 +99,19 @@ const withCString = <T,>(
   }
 }
 
-const applyScreen = (mod: JlpWasmModule, screen: Screen): string | null => {
+const applyScreen = (
+  mod: JlpWasmModule,
+  screen: Screen,
+  theme: Layout['theme']
+): string | null => {
   // Wrap the single screen into the top-level layout shape the
-  // wasm bridge expects.
+  // wasm bridge expects. The theme rides along so the preview paints
+  // the same background and default colours as the panel; a bundle
+  // built before the entry point learned about it ignores the block.
   const doc = {
     schema: 1,
     name: 'designer',
+    ...(theme ? { theme } : {}),
     screens: [screen]
   }
   const json = JSON.stringify(doc)
@@ -314,7 +321,7 @@ export function WasmCanvas({
           : w
       )
     }
-    const err = applyScreen(modReady, previewScreen)
+    const err = applyScreen(modReady, previewScreen, layout.theme)
     if (err) {
       onStatus?.(`apply: ${err}`)
       return
@@ -355,7 +362,9 @@ export function WasmCanvas({
         // clicks pass through to the React-Grid-Layout tiles.
         zIndex: 10,
         pointerEvents: 'none',
-        background: '#0d1117'
+        // The wasm screen paints the theme background itself; this only
+        // shows around it and while the module loads, so keep it in step.
+        background: layout.theme?.bg ?? '#0d1117'
       }}
     />
   )
