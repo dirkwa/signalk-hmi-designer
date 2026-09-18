@@ -554,10 +554,27 @@ export function App(): React.JSX.Element {
   const [pushResult, setPushResult] = useState<PushResult | null>(null)
   const [pushErr, setPushErr] = useState<string | null>(null)
 
+  // The in-flight (or settled) self-paths request. Push awaits it so a
+  // push right after load still gets its binds checked, and retries it
+  // once after a failure instead of trusting an empty list.
+  const pathsRequest = useRef<Promise<string[]> | null>(null)
+  const loadPaths = (): Promise<string[]> => {
+    const req = fetchSelfPaths()
+      .then((p) => {
+        setPaths(p)
+        return p
+      })
+      .catch((e: unknown) => {
+        setPaths([])
+        throw e
+      })
+    pathsRequest.current = req
+    return req
+  }
   useEffect(() => {
-    void fetchSelfPaths()
-      .then(setPaths)
-      .catch(() => setPaths([]))
+    loadPaths().catch(() => {
+      /* surfaced by whatever needs the list, e.g. onPush */
+    })
   }, [])
 
   // Restore previously-saved layout on first mount. Hydrates all
@@ -1447,11 +1464,24 @@ export function App(): React.JSX.Element {
     // The preview resolves a nested bind client-side, but the layout
     // reaches the panel with the bind as typed, and the firmware
     // subscribes to it literally: the widget would show nothing. Refuse
-    // rather than push a layout that is broken on the device.
+    // rather than push a layout that is broken on the device. Telling a
+    // nested bind from a leaf needs the self-paths list, so wait for it
+    // and refuse as well when it cannot be had.
+    let known: ReadonlySet<string>
+    try {
+      const req = pathsRequest.current ?? loadPaths()
+      known = new Set(await req.catch(() => loadPaths()))
+    } catch {
+      setPushErr(
+        'Could not load the SignalK path list, so binds cannot be ' +
+          'checked before pushing. Check the server connection and try again.'
+      )
+      return
+    }
     const nested = layoutDoc.screens.flatMap((s) =>
       s.widgets.flatMap((w) =>
         bindsOf(w)
-          .filter((b) => isNestedBind(b, knownPathSet))
+          .filter((b) => isNestedBind(b, known))
           .map((b) => `${w.id}: ${b}`)
       )
     )
@@ -1943,15 +1973,22 @@ export function App(): React.JSX.Element {
                       onFocus={() => setBindTarget('widget')}
                       onChange={(e) => applyBind(selected.id, e.target.value)}
                     />
-                    {isNestedBind(selected.bind ?? '', knownPathSet) && (
-                      <span className="muted">
-                        reaches into an object value: shown in the preview only.
-                        The panel cannot resolve it, and Push will refuse the
-                        layout.
-                      </span>
-                    )}
                   </label>
                 )}
+              {/* Covers bargroup sub-bar binds too, which have their own
+                  inputs further down. */}
+              {(() => {
+                const nested = bindsOf(selected).filter((b) =>
+                  isNestedBind(b, knownPathSet)
+                )
+                return nested.length > 0 ? (
+                  <p className="muted">
+                    {nested.join(', ')}: reaches into an object value, shown in
+                    the preview only. The panel cannot resolve it, and Push will
+                    refuse the layout.
+                  </p>
+                ) : null
+              })()}
               {selected.type === 'label' && (
                 <label>
                   show description

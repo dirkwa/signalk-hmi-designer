@@ -102,9 +102,11 @@ For widgets that bind **multiple** SK paths (`bargroup`, `list`):
   self-paths list, so a layout adopted before it loads is hydrated
   again when it arrives (`pendingMetaRef`). The panel firmware
   subscribes binds literally, so `onPush` refuses a layout with a
-  nested bind (`isNestedBind`) and the inspector says so under the
-  bind field; lift that once the firmware resolves nested fields and
-  advertises it in `/hello`.
+  nested bind (`isNestedBind`), after awaiting the self-paths request
+  (`pathsRequest`, retried once on failure) since an empty list
+  cannot tell a nested bind from a leaf; the inspector lists the
+  affected binds of the selected widget. Lift that once the firmware
+  resolves nested fields and advertises it in `/hello`.
 - For path-picker UX, set `bindTarget` to point at the focused field
   (`{barIdx: i}`) on input focus, route the click in the right-hand
   panel accordingly. Reset `bindTarget` to `'widget'` whenever
