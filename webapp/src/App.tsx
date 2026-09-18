@@ -32,7 +32,8 @@ import {
   MIN_DEVICE_FIRMWARE,
   parseFirmwareVersion,
   STATUS_OVERLAY_HEIGHT,
-  firmwareMeets
+  firmwareMeets,
+  mergeTheme
 } from './schema'
 
 import {
@@ -485,15 +486,7 @@ export function App(): React.JSX.Element {
   // Clearing the last set field should drop the whole `theme` block
   // rather than leave a stray `{}` in the exported layout.
   const updateTheme = (patch: Partial<NonNullable<Layout['theme']>>): void => {
-    setThemeConfig((prev) => {
-      const next = { ...prev, ...patch }
-      const defined = Object.fromEntries(
-        Object.entries(next).filter(([, v]) => v !== undefined)
-      )
-      return Object.keys(defined).length > 0
-        ? (defined as Layout['theme'])
-        : undefined
-    })
+    setThemeConfig((prev) => mergeTheme(prev, patch))
   }
   const [selectedId, setSelectedId] = useState<string | null>(null)
   // Interim position of a currently-dragging/resizing tile. Set by

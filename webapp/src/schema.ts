@@ -473,6 +473,22 @@ export interface HelloResponse {
   layout_source?: string
 }
 
+/** Apply a patch to a layout's theme block and drop the block once no
+ *  field is left set, so clearing the last colour does not leave a
+ *  stray `{}` in the exported layout. */
+export function mergeTheme(
+  prev: Layout['theme'],
+  patch: Partial<NonNullable<Layout['theme']>>
+): Layout['theme'] {
+  const next = { ...prev, ...patch }
+  const defined = Object.fromEntries(
+    Object.entries(next).filter(([, v]) => v !== undefined)
+  )
+  return Object.keys(defined).length > 0
+    ? (defined as Layout['theme'])
+    : undefined
+}
+
 /** Narrowing helper — verifies an unknown value matches HelloResponse. */
 export function isHelloResponse(v: unknown): v is HelloResponse {
   if (typeof v !== 'object' || v === null) return false
