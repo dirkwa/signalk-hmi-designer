@@ -112,9 +112,10 @@ For widgets that bind **multiple** SK paths (`bargroup`, `list`):
   `displayUnits.formula` (`value`, `value - N`, `value + N`, `value *
   N`, `value / N`) into `{unit, scale, offset, decimals}`. Use it to
   prefill the inspector when the user picks a path.
-- A label widget bound to a SK path **prefers `description` over the
-  formatted value**, matching firmware behaviour. So a switch state
-  bind shows "BMS DnC" instead of "1.0".
+- A label widget bound to a SK path shows the formatted live value by
+  default, matching firmware behaviour. Set `show_description` to
+  prefer the SK meta `description` instead (e.g. a switch state bind
+  reads "BMS DnC" rather than "1.0").
 
 ## Build / dev workflow
 
@@ -123,11 +124,16 @@ npm install
 npm run dev          # vite at http://localhost:5173
                      # proxies /signalk + /plugins to $SIGNALK_DEV_URL
                      # (default 127.0.0.1:3000)
-npm run build:all    # lint + tsc + vite build + vitest
+npm run build:all    # lint + tsc (plugin, webapp, tests) + vite build + vitest
 ```
 
-`npm run build:all` is the gate. Tests use vitest; canvas/UI
-behaviour gets tested via the schema + display-defaults suites.
+`npm run build:all` is the gate. Tests use vitest and are type-checked
+under the same strict settings as the sources (`tsconfig.test.json`,
+run by `npm run typecheck:test` inside `build`), so a test with a type
+error fails the gate. `test/plugin.test.ts` covers the server-side
+plugin (layout persistence, device-proxy, mDNS `/devices`) against a
+real express router; canvas/UI behaviour gets tested via the schema +
+display-defaults suites.
 
 When iterating against the local SK server on :4100:
 
@@ -183,12 +189,13 @@ modification are free, redistribution is not. `LICENSE.md` is authoritative.
 - **Build/test gate**: `npm run format && npm run build:all && npm run
   test` (the second already runs tests, but the user's habit is to
   run them separately).
-- **Commits**: focused, atomic. Body wrapped at 72; subject ≤ 50,
-  imperative.
+- **Commits**: focused, atomic, Angular style — see "Commit and PR
+  messages" below.
 - **Never auto-commit, never auto-push.** Do both only when the user
   explicitly asks.
-- **PR style**: succinct, no boilerplate test plans, only mention
-  tests actually performed. No AI attribution anywhere.
+- **PR style**: Angular-style title, succinct body, no boilerplate
+  test plans, only mention tests actually performed. No AI
+  attribution anywhere.
 - **No release-flow work** (version bumps, tags) unless the user says
   release.
 - **Code review**: `cr review --plain --type committed --base master`
@@ -196,6 +203,45 @@ modification are free, redistribution is not. `LICENSE.md` is authoritative.
   rate-limited ~50 min between runs.
 - **Comments**: WHY only. No echo comments, no "added for issue #X"
   rot bait.
+
+## Commit and PR messages
+
+Angular style, for commit messages and PR titles alike:
+
+```
+<type>(<scope>): <summary>
+
+<body>
+
+<footer>
+```
+
+- **type** is one of `feat`, `fix`, `perf`, `refactor`, `test`,
+  `docs`, `build`, `ci`. Pick the one that describes the change's
+  effect, not the files touched: a fix that also adds a test is
+  `fix`; a commit that only adds tests is `test`; dependency bumps
+  are `build(deps)`.
+- **scope** is optional and names the area: `widgets`, `schema`,
+  `preview`, `inspector`, `device`, `push`, `meta`, `plugin`,
+  `publish`, `deps`. Omit it when the change is repo-wide.
+- **summary**: imperative, present tense, lower case, no trailing
+  period, ≤ 50 chars including the prefix.
+- **body**: blank line after the header, wrapped at 72, imperative.
+  Says what changed and why, not how. Omit it only when the header
+  already says everything.
+- **footer**: `BREAKING CHANGE: <what breaks and how to migrate>` for
+  breaking changes, which also get a `!` after the scope
+  (`feat(license)!: ...`). Issue references go here as `Closes #12`
+  or `Fixes #12`.
+- **reverts**: `revert: <header of the reverted commit>`, with the
+  body `This reverts commit <sha>.` followed by the reason.
+
+PRs: the title is a header in the same format and reads as the merge
+commit's subject. One type per PR where possible; when a PR mixes
+types, title it by the dominant one and keep the commits atomic per
+type. The body says what and why, then which checks were actually
+run (`npm run build:all`, the CI matrix, an on-boat test). No
+test-plan boilerplate, no AI attribution.
 
 ## Out of scope (deferred to v0.3+)
 

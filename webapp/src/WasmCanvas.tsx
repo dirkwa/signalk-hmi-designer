@@ -184,8 +184,8 @@ const pushAllValues = (
       }
       // strings: not yet supported in the wasm bridge (the firmware
       // has SubjectKind::String but none of the v0.2 widgets read
-      // it; label widgets prefer the SK description over the
-      // formatted value anyway, via pathDescriptions).
+      // it; a `show_description` label reads the description via
+      // pathDescriptions instead of a string subject).
     })
   }
 }
@@ -292,7 +292,29 @@ export function WasmCanvas({
     if (!screen) return
     pushAllMeta(modReady, pathZones, pathDescriptions)
     pushNotifications(modReady, notifications)
-    const err = applyScreen(modReady, screen)
+    // A stream widget cannot render here: its content is a live MJPEG
+    // pull the preview has no business making (and one unknown kind
+    // would abort the whole wasm apply). Substitute a same-geometry
+    // static label so the rest of the screen still previews true.
+    const previewScreen: Screen = {
+      ...screen,
+      widgets: screen.widgets.map((w) =>
+        w.type === 'stream'
+          ? {
+              id: w.id,
+              type: 'label' as const,
+              x: w.x,
+              y: w.y,
+              w: w.w,
+              h: w.h,
+              label: 'stream — live on the panel only',
+              bg_color: w.bg_color,
+              fg_color: w.fg_color
+            }
+          : w
+      )
+    }
+    const err = applyScreen(modReady, previewScreen)
     if (err) {
       onStatus?.(`apply: ${err}`)
       return

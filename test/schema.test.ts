@@ -5,6 +5,9 @@ import {
   parseFirmwareVersion,
   type AnchorWidget,
   type ButtonWidget,
+  type LabelWidget,
+  type StreamWidget,
+  type SliderWidget,
   type Widget,
   type WidgetKind
 } from '../webapp/src/schema'
@@ -121,6 +124,95 @@ describe('anchor widget', () => {
     // Anchor owns a fixed navigation.anchor.* family, so it carries no
     // user `bind`.
     expect('bind' in w).toBe(false)
+  })
+
+  it("'stream' round-trips with only advertised fields", () => {
+    const kind: WidgetKind = 'stream'
+    const w: StreamWidget = {
+      type: 'stream',
+      id: 's1',
+      x: 0,
+      y: 0,
+      w: 1024,
+      h: 544,
+      port: 5004,
+      touch: true,
+      touch_port: 5005
+    }
+    const asWidget: Widget = w
+    expect(kind).toBe('stream')
+    // The device's /hello field list for stream has no label/display/bind
+    // and the firmware rejects unadvertised fields — StreamWidget keeps
+    // them type-invalid, so writing them is a compile error, not just a
+    // runtime omission.
+    // @ts-expect-error label is not an advertised stream field
+    const withLabel: StreamWidget = { ...w, label: 'nope' }
+    // @ts-expect-error bind is not an advertised stream field
+    const withBind: StreamWidget = { ...w, bind: 'nope' }
+    // @ts-expect-error display is not an advertised stream field
+    const withDisplay: StreamWidget = { ...w, display: {} }
+    expect(withLabel.type).toBe('stream')
+    expect(withBind.type).toBe('stream')
+    expect(withDisplay.type).toBe('stream')
+    expect(asWidget.type).toBe('stream')
+  })
+})
+
+describe('label widget', () => {
+  it('show_description defaults to unset (value shown by default)', () => {
+    const w: LabelWidget = {
+      type: 'label',
+      id: 'l1',
+      x: 0,
+      y: 0,
+      w: 240,
+      h: 100,
+      bind: 'electrical.switches.bmsDnc.state'
+    }
+    const asWidget: Widget = w
+    expect(asWidget.type).toBe('label')
+    expect(w.show_description).toBeUndefined()
+  })
+
+  it('show_description opts back into the description-preferred behaviour', () => {
+    const w: LabelWidget = {
+      type: 'label',
+      id: 'l2',
+      x: 0,
+      y: 0,
+      w: 240,
+      h: 100,
+      bind: 'electrical.switches.bmsDnc.state',
+      show_description: true
+    }
+    const round = JSON.parse(JSON.stringify(w))
+    expect(round.show_description).toBe(true)
+  })
+})
+
+describe('slider widget', () => {
+  it("'slider' is a WidgetKind, a SliderWidget is a Widget, has bind (unlike volume)", () => {
+    const kind: WidgetKind = 'slider'
+    const w: SliderWidget = {
+      type: 'slider',
+      id: 's1',
+      x: 0,
+      y: 0,
+      w: 320,
+      h: 100,
+      bind: 'electrical.batteries.house.stateOfCharge',
+      min: 0,
+      max: 100,
+      // A 0-1 ratio path mapped onto the slider's 0-100 UI range.
+      display: { scale: 100 }
+    }
+    const asWidget: Widget = w
+    expect(kind).toBe('slider')
+    expect(asWidget.type).toBe('slider')
+    expect('bind' in w).toBe(true)
+    // Round-trips through JSON.
+    const round = JSON.parse(JSON.stringify(w))
+    expect(round).toEqual(w)
   })
 })
 

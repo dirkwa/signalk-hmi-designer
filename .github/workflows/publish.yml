@@ -10,6 +10,11 @@
 #
 # The package.json `repository.url` must match this repo's GitHub URL
 # verbatim or the OIDC attestation fails with HTTP 422.
+#
+# A pre-release version (0.3.0-beta.1) is published under its own
+# dist-tag (`beta`) instead of `latest`, so the SignalK appstore, which
+# follows `latest`, keeps offering the last stable release. Install a
+# pre-release explicitly with `npm install signalk-hmi-designer@beta`.
 
 name: Publish to npm
 
@@ -42,5 +47,21 @@ jobs:
       - name: Build + lint + test
         run: npm run build:all
 
+      - name: Pick the npm dist-tag from the version
+        id: dist_tag
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag=latest
+          if [[ "$version" == *-* ]]; then
+            pre="${version#*-}"
+            pre="${pre%%.*}"
+            case "$pre" in
+              '' | *[!a-z]*) tag=next ;;
+              *) tag="$pre" ;;
+            esac
+          fi
+          echo "version=$version tag=$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Publish to npm with provenance
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "${{ steps.dist_tag.outputs.tag }}"

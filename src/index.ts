@@ -149,10 +149,13 @@ const plugin = (app: ServerAPI): Plugin => {
           return
         }
         const url = b.url
-        // Only allow http(s):// to private addresses. We accept the
-        // shape of a normal URL; rejection of public targets is
-        // host-level concern (SK server should be on a LAN), but we
-        // still parse to catch typos.
+        // NOTE: the target is NOT restricted to private addresses -- this
+        // parses the URL to catch typos and rejects non-http(s) schemes, but
+        // any reachable host is forwarded to. The proxy runs with the SK
+        // server's network position and inherits its auth, so an authenticated
+        // webapp user can reach anything the server can. That was already true
+        // for GET/POST; PUT raises the stakes because it can change state.
+        // An allowlist of discovered panels would close this.
         let parsed: URL
         try {
           parsed = new URL(url)
@@ -167,8 +170,10 @@ const plugin = (app: ServerAPI): Plugin => {
 
         const method =
           typeof b.method === 'string' ? b.method.toUpperCase() : 'GET'
-        if (method !== 'GET' && method !== 'POST') {
-          res.status(400).json({ error: 'method must be GET or POST' })
+        // PUT is here for espOS's config API (/api/v1/config), which the
+        // brightness control writes to; the device's layout API uses POST.
+        if (method !== 'GET' && method !== 'POST' && method !== 'PUT') {
+          res.status(400).json({ error: 'method must be GET, POST or PUT' })
           return
         }
 
@@ -182,7 +187,7 @@ const plugin = (app: ServerAPI): Plugin => {
         }
 
         const init: RequestInit = { method, headers }
-        if (method === 'POST') {
+        if (method === 'POST' || method === 'PUT') {
           const payload =
             typeof b.body === 'string' ? b.body : JSON.stringify(b.body ?? {})
           init.body = payload

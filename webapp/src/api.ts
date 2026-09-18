@@ -12,7 +12,7 @@ const PLUGIN_BASE = '/plugins/signalk-hmi-designer'
 
 interface ProxyRequest {
   url: string
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'PUT'
   body?: unknown
 }
 
@@ -437,4 +437,102 @@ export async function fetchDevices(): Promise<DiscoveredDevice[]> {
     throw new Error('device discovery returned an unexpected shape')
   }
   return (body as { devices: DiscoveredDevice[] }).devices
+}
+
+/** Reduce a device URL to what identifies the panel: scheme, host and
+ *  port. Host names are case-insensitive, and neither a trailing slash
+ *  nor the trailing dot of an mDNS FQDN makes it a different panel. An
+ *  address that does not parse comes back trimmed but otherwise as typed,
+ *  so a half-typed URL simply matches nothing. */
+export function normalizeDeviceUrl(url: string): string {
+  const trimmed = url.trim()
+  try {
+    const u = new URL(trimmed)
+    const host = u.hostname.toLowerCase().replace(/\.$/, '')
+    return `${u.protocol}//${host}${u.port ? `:${u.port}` : ''}`
+  } catch {
+    return trimmed
+  }
+}
+
+/** The scanned panel the URL box currently points at, if any. */
+export function matchDevice(
+  devices: readonly DiscoveredDevice[],
+  url: string
+): DiscoveredDevice | undefined {
+  const want = normalizeDeviceUrl(url)
+  return devices.find((d) => normalizeDeviceUrl(d.url) === want)
+}
+
+/** Picker caption: the mDNS instance name plus where it lives, so two
+ *  panels that kept the same default name stay tellable apart. */
+export function deviceLabel(d: DiscoveredDevice): string {
+  let where = d.url
+  try {
+    where = new URL(d.url).host
+  } catch {
+    // keep the raw url
+  }
+  return d.name && d.name !== where ? `${d.name} (${where})` : where
+}
+
+/** mDNS answers arrive in whatever order responders win the race, so
+ *  the same two panels would swap places between scans. Sort a copy by
+ *  name, then url. */
+export function sortDevices(
+  devices: readonly DiscoveredDevice[]
+): DiscoveredDevice[] {
+  return [...devices].sort(
+    (a, b) => a.name.localeCompare(b.name) || a.url.localeCompare(b.url)
+  )
+}
+
+// ---- backlight brightness -------------------------------------------------
+//
+// Brightness is espOS config, not a layout property: it lives in the device's
+// `cockpit` namespace, is stored in NVS and is re-applied on every boot, so a
+// value set here survives a reboot without the designer doing anything.
+//
+// It is served by the espOS web server on port 80, NOT by the layout API the
+// rest of this file talks to (:8081), so the port is replaced rather than the
+// device URL reused as-is.
+
+/** espOS config base (port 80) for a device given its layout API URL. */
+function configBase(deviceUrl: string): string {
+  const u = new URL(deviceUrl)
+  u.port = ''
+  u.pathname = ''
+  return u.toString().replace(/\/$/, '')
+}
+
+/** Current backlight brightness in percent, or null if unsupported. */
+export async function fetchBrightness(
+  deviceUrl: string
+): Promise<number | null> {
+  const v = await deviceProxy<unknown>({
+    url: `${configBase(deviceUrl)}/api/v1/config`,
+    method: 'GET'
+  })
+  if (typeof v !== 'object' || v === null) return null
+  const cockpit = (v as Record<string, unknown>).cockpit
+  if (typeof cockpit !== 'object' || cockpit === null) return null
+  const b = (cockpit as Record<string, unknown>).brightness
+  return typeof b === 'number' ? b : null
+}
+
+/**
+ * Set the backlight brightness and persist it. The device clamps to the
+ * descriptor's 5..100; 0 is not offered because a panel at 0 cannot be
+ * turned back up from its own screen.
+ */
+export async function setBrightness(
+  deviceUrl: string,
+  pct: number
+): Promise<void> {
+  const clamped = Math.max(5, Math.min(100, Math.round(pct)))
+  await deviceProxy<unknown>({
+    url: `${configBase(deviceUrl)}/api/v1/config`,
+    method: 'PUT',
+    body: { cockpit: { brightness: clamped } }
+  })
 }

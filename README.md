@@ -107,7 +107,7 @@ npm run build:all    # lint + tsc + vite build + vitest
 
 The WASM bundle is copied from a sibling [espos-p4-cockpit-wasm](https://github.com/dirkwa/espos-p4-cockpit-wasm) checkout via `scripts/copy-wasm.sh`. If that repo isn't present locally, WASM preview just won't load — Mirror mode still works.
 
-The plugin compiles to `plugin/`; the webapp to `public/`. Both are gitignored. Vite static assets (icon, etc.) live in `webapp/public/` and are tracked.
+The plugin compiles to `plugin/`; the webapp to `public/`. Both are gitignored. The App Store icon is `icon.svg` at the repo root (the `signalk.appIcon` path); the Vite build emits a copy into `public/` for the webapp launcher tile.
 
 ## Status
 

@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import GridLayout, { type Layout as GLLayout } from 'react-grid-layout'
+import GridLayout, {
+  getCompactor,
+  type LayoutItem as GLLayout
+} from 'react-grid-layout'
 import {
   DndContext,
   PointerSensor,
@@ -34,15 +37,20 @@ import {
 
 import {
   deriveDisplayDefaults,
+  deviceLabel,
   fetchDevices,
   fetchHello,
   fetchPathMeta,
+  fetchBrightness,
   fetchScreenshot,
   fetchSelfPaths,
   loadSavedLayout,
+  matchDevice,
   pushLayout,
   resolveBindPath,
   saveLayout,
+  sortDevices,
+  setBrightness,
   type DiscoveredDevice,
   type MetaZone,
   type PushResult
@@ -67,6 +75,20 @@ declare const __PLUGIN_VERSION__: string
 const COLS = 24
 const ROW_HEIGHT = 25
 const ROW_PX_H = ROW_HEIGHT
+
+// react-grid-layout 2 takes its settings as config objects instead of
+// flat props. The ones that never change live here so their identity is
+// stable across renders.
+//
+// The designer must NOT auto-reflow: a drag of one widget should never
+// displace another. No compaction disables gravity, and allowing overlap
+// lets tiles park anywhere without pushing their siblings.
+const FREEFORM_COMPACTOR = getCompactor(null, true)
+// Drag only via the chrome bar (which only appears on selected widgets),
+// so unselected widgets behave as pure click targets. The library's
+// default 3px drag threshold is left on, so a click on the bar is never
+// taken for a drag.
+const DRAG_CONFIG = { handle: '.chrome' } as const
 // Fallback width used before a device has connected (hello not loaded
 // yet). 1024 matches the Waveshare 7B which we develop against.
 const DEFAULT_DISPLAY_W = 1024
@@ -101,12 +123,15 @@ const PANEL_LOCAL_KINDS = new Set<WidgetKind>([
   'voice',
   'speaker',
   'mic',
-  'volume'
+  'volume',
+  'stream'
 ])
 
 function defaultWidget(
   kind: WidgetKind,
-  existing: ReadonlyArray<{ id: string }>
+  existing: ReadonlyArray<{ id: string }>,
+  displayW: number = DEFAULT_DISPLAY_W,
+  displayH: number = DEFAULT_DISPLAY_H
 ): Widget {
   const id = freshId(kind, existing)
   const base = {
@@ -217,6 +242,35 @@ function defaultWidget(
       return { ...base, type: 'mic', w: 200, h: 100, label: '' }
     case 'volume':
       return { ...base, type: 'volume', w: 320, h: 100, label: '' }
+    case 'stream':
+      // Deliberately NOT ...base: the device's field list for stream has
+      // no label, and the firmware rejects unadvertised fields. Default
+      // to the connected panel's full screen minus the tab-strip row —
+      // the capture is panel-sized and frames render unscaled, so
+      // anything smaller crops.
+      return {
+        id,
+        type: 'stream',
+        x: 0,
+        y: 0,
+        w: displayW,
+        h: displayH - DEFAULT_TAB_STRIP_HEIGHT
+      }
+    case 'slider':
+      return {
+        ...base,
+        type: 'slider',
+        w: 320,
+        h: 100,
+        label: '',
+        bind: '',
+        min: 0,
+        max: 100,
+        // decimals:1 (not 0) so a bound path's nonzero metadata precision
+        // isn't blocked by applyBind's merge sentinel below, which treats
+        // 1 as "still default" and 0 as "user set".
+        display: { unit: '', scale: 1, offset: 0, decimals: 1 }
+      }
   }
 }
 
@@ -391,6 +445,20 @@ export function App(): React.JSX.Element {
   })
   const [hello, setHello] = useState<HelloResponse | null>(null)
   const [helloErr, setHelloErr] = useState<string | null>(null)
+  // Backlight brightness (percent). null = not loaded or unsupported by the
+  // device. Persisted on the device in NVS, so this is a read of device
+  // state, not designer state.
+  const [brightness, setBrightnessState] = useState<number | null>(null)
+  const [brightnessErr, setBrightnessErr] = useState<string | null>(null)
+  // Every connect attempt takes the next generation; results from an older
+  // one are dropped. A URL comparison alone is not enough -- reconnecting to
+  // the SAME url must also invalidate the previous attempt's in-flight
+  // results, and only a generation distinguishes those.
+  const connectGen = useRef(0)
+  // The url of the connection that actually answered. The input box is
+  // editable, so `deviceUrl` is where the user is typing, not where the
+  // device is; writes must target the latter.
+  const [connectedUrl, setConnectedUrl] = useState<string | null>(null)
 
   const [paths, setPaths] = useState<string[]>([])
   const [pathFilter, setPathFilter] = useState<string>('')
@@ -457,8 +525,9 @@ export function App(): React.JSX.Element {
   const [pathZones, setPathZones] = useState<Map<string, MetaZone[]>>(
     () => new Map()
   )
-  // SK meta `description` per bound path; LabelPreview prefers this
-  // over the formatted value (matches firmware behaviour).
+  // SK meta `description` per bound path; a label widget shows this
+  // instead of the formatted value when `show_description` is set
+  // (matches firmware behaviour).
   const [pathDescriptions, setPathDescriptions] = useState<Map<string, string>>(
     () => new Map()
   )
@@ -608,6 +677,33 @@ export function App(): React.JSX.Element {
     [screen.widgets, colPxW]
   )
 
+  // Rows that fit the canvas: the display minus the status overlay strip
+  // and the tab strip. With autoSize off this makes the grid container
+  // fill the full canvas height, so widgets can be dragged into the lower
+  // portion; otherwise RGL sizes itself to the lowest existing widget's
+  // row, which leaves no drop zone below.
+  const maxRows = Math.floor(
+    (displayH -
+      (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
+      (showTabStrip ? tabStripHeight : 0)) /
+      ROW_HEIGHT
+  )
+  // RGL defaults margin and containerPadding to [10,10], which shifts
+  // everything by 10-20px per widget, and the canvas no longer reflects
+  // the device 1:1. Zero both so JSON pixel coords map directly to canvas
+  // pixels. Memoized: a fresh object each render would look like a config
+  // change to the grid.
+  const gridConfig = useMemo(
+    () => ({
+      cols: COLS,
+      rowHeight: ROW_HEIGHT,
+      margin: [0, 0] as const,
+      containerPadding: [0, 0] as const,
+      maxRows
+    }),
+    [maxRows]
+  )
+
   // Effective layout for the WASM canvas: layoutDoc with the
   // currently-dragging widget's coords overridden from dragPreview
   // so the wasm render moves in real-time as the user drags. When
@@ -670,11 +766,12 @@ export function App(): React.JSX.Element {
   // — and writing those back to state grid-quantizes pixel positions,
   // drifting widgets over time.
   const onDragStop = (
-    _layout: GLLayout[],
-    _oldItem: GLLayout,
-    newItem: GLLayout
+    _layout: readonly GLLayout[],
+    _oldItem: GLLayout | null,
+    newItem: GLLayout | null
   ): void => {
     setDragPreview(null)
+    if (!newItem) return
     setScreen((prev) => ({
       ...prev,
       widgets: prev.widgets.map((w) =>
@@ -693,10 +790,11 @@ export function App(): React.JSX.Element {
   // while SVG mode (which already updates from screens state)
   // sees no behaviour change.
   const onDragOrResize = (
-    _layout: GLLayout[],
-    _oldItem: GLLayout,
-    newItem: GLLayout
+    _layout: readonly GLLayout[],
+    _oldItem: GLLayout | null,
+    newItem: GLLayout | null
   ): void => {
+    if (!newItem) return
     setDragPreview({ id: newItem.i, grid: newItem })
   }
 
@@ -782,7 +880,7 @@ export function App(): React.JSX.Element {
     // Pick a fresh id based on the *current* set so we don't collide
     // with anything already in the layout (e.g. loaded from server).
     setScreen((prev) => {
-      const w = defaultWidget(kind, prev.widgets)
+      const w = defaultWidget(kind, prev.widgets, displayW, displayH)
       setSelectedId(w.id)
       return { ...prev, widgets: [...prev.widgets, w] }
     })
@@ -910,6 +1008,7 @@ export function App(): React.JSX.Element {
             w.type !== 'value' &&
             w.type !== 'arc' &&
             w.type !== 'bar' &&
+            w.type !== 'slider' &&
             w.type !== 'button'
           ) {
             return w
@@ -943,7 +1042,7 @@ export function App(): React.JSX.Element {
     setScanning(true)
     setHelloErr(null)
     try {
-      const found = await fetchDevices()
+      const found = sortDevices(await fetchDevices())
       setDevices(found)
       // One panel on the LAN is the common case — select it outright
       // rather than making the user pick from a list of one.
@@ -961,21 +1060,86 @@ export function App(): React.JSX.Element {
     }
   }
 
-  const onConnect = async (): Promise<void> => {
+  // `url` is for callers that have just chosen a target: the state update
+  // from setDeviceUrl has not landed yet, so reading deviceUrl would
+  // connect to the previous panel.
+  const onConnect = async (url?: string): Promise<void> => {
     setHelloErr(null)
     setHello(null)
+    // Drop the previous device's identity and brightness immediately: leaving
+    // either on screen during a connect would show one panel's state while
+    // the slider writes to another.
+    setConnectedUrl(null)
+    setBrightnessState(null)
+    setBrightnessErr(null)
+    const target = url ?? deviceUrl
+    const gen = ++connectGen.current
+    // Results only count while this is still the newest attempt.
+    const current = (): boolean => gen === connectGen.current
     try {
-      const h = await fetchHello(deviceUrl)
+      const h = await fetchHello(target)
+      if (!current()) return
       setHello(h)
+      setConnectedUrl(target)
       // Only remember a URL that actually answered, so a typo does not
       // become the sticky default for every future session.
       try {
-        window.localStorage.setItem(DEVICE_URL_KEY, deviceUrl)
+        window.localStorage.setItem(DEVICE_URL_KEY, target)
       } catch {
         // non-fatal: the session still works, it just will not be remembered
       }
+      // Brightness lives on the espOS config API, not /hello. null hides the
+      // slider and means "this device does not report one"; a failed request
+      // is an error and must say so, or a reachable panel looks unsupported.
+      try {
+        const b = await fetchBrightness(target)
+        if (current()) setBrightnessState(b)
+      } catch (e) {
+        if (current()) {
+          setBrightnessState(null)
+          setBrightnessErr(
+            `brightness unavailable: ${e instanceof Error ? e.message : String(e)}`
+          )
+        }
+      }
     } catch (e) {
+      if (!current()) return
       setHelloErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // Choosing a scanned panel is the whole intent: fill the box and
+  // connect, rather than asking for a second click on Connect.
+  const onPickDevice = (url: string): void => {
+    if (!url) return
+    setDeviceUrl(url)
+    void onConnect(url)
+  }
+
+  /**
+   * Commit the brightness the slider was released on. Dragging updates the
+   * number locally; only this writes, so one drag is one NVS write rather
+   * than one per intermediate value.
+   */
+  const onBrightnessCommit = async (pct: number): Promise<void> => {
+    // Write to the device that answered, never to whatever is currently in
+    // the url box: the user may have typed or scanned a new one since.
+    const target = connectedUrl
+    if (!target) return
+    const gen = connectGen.current
+    setBrightnessErr(null)
+    try {
+      await setBrightness(target, pct)
+    } catch (e) {
+      if (gen !== connectGen.current) return
+      setBrightnessErr(e instanceof Error ? e.message : String(e))
+      // Put the slider back where the device actually is.
+      try {
+        const b = await fetchBrightness(target)
+        if (gen === connectGen.current) setBrightnessState(b)
+      } catch {
+        /* leave the shown value; the error is already surfaced */
+      }
     }
   }
 
@@ -1111,6 +1275,7 @@ export function App(): React.JSX.Element {
                     wid.type !== 'value' &&
                     wid.type !== 'arc' &&
                     wid.type !== 'bar' &&
+                    wid.type !== 'slider' &&
                     wid.type !== 'button'
                   ) {
                     return wid
@@ -1281,7 +1446,9 @@ export function App(): React.JSX.Element {
         'voice',
         'speaker',
         'mic',
-        'volume'
+        'volume',
+        'stream',
+        'slider'
       ]
     return Object.keys(hello.widgets).filter(
       (k): k is WidgetKind =>
@@ -1298,7 +1465,9 @@ export function App(): React.JSX.Element {
         k === 'voice' ||
         k === 'speaker' ||
         k === 'mic' ||
-        k === 'volume'
+        k === 'volume' ||
+        k === 'stream' ||
+        k === 'slider'
     )
   }, [hello])
 
@@ -1320,18 +1489,10 @@ export function App(): React.JSX.Element {
           <input
             type="text"
             className="topbar-url"
-            list="discovered-devices"
             value={deviceUrl}
             onChange={(e) => setDeviceUrl(e.target.value)}
             placeholder={DEFAULT_DEVICE_URL}
           />
-          <datalist id="discovered-devices">
-            {(devices ?? []).map((d) => (
-              <option key={d.url} value={d.url}>
-                {d.name}
-              </option>
-            ))}
-          </datalist>
           <button
             onClick={() => void onScan()}
             disabled={scanning}
@@ -1339,6 +1500,29 @@ export function App(): React.JSX.Element {
           >
             {scanning ? 'Scanning…' : 'Scan'}
           </button>
+          {/* A real select, not a datalist: a datalist only offers entries
+              matching the text already in the box, and the box is pre-filled
+              with the last URL, so the other panels never showed. */}
+          {devices && devices.length > 0 && (
+            <select
+              className="topbar-devices"
+              aria-label="Panels found by the last scan"
+              title="Panels found by the last scan. Picking one connects to it."
+              value={matchDevice(devices, deviceUrl)?.url ?? ''}
+              onChange={(e) => onPickDevice(e.target.value)}
+            >
+              <option value="" disabled>
+                {devices.length === 1
+                  ? '1 panel found'
+                  : `${devices.length} panels found`}
+              </option>
+              {devices.map((d) => (
+                <option key={d.url} value={d.url}>
+                  {deviceLabel(d)}
+                </option>
+              ))}
+            </select>
+          )}
           <button onClick={() => void onConnect()}>Connect</button>
           <button className="primary" onClick={() => void onPush()}>
             Push
@@ -1403,6 +1587,32 @@ export function App(): React.JSX.Element {
               {wasmStatus}
             </span>
           )}
+          {connectedUrl !== null && brightness !== null && (
+            <label
+              className="topbar-toggle"
+              title={`Panel backlight brightness (${brightness}%) — stored on the device, survives a reboot`}
+              style={{ minWidth: 110 }}
+            >
+              <span>☀ {brightness}%</span>
+              <input
+                type="range"
+                min={5}
+                max={100}
+                step={5}
+                value={brightness}
+                onChange={(e) => setBrightnessState(Number(e.target.value))}
+                // pointerup, not mouseup+touchend: a touch dispatches
+                // touchend AND a compatibility mouseup, which would send two
+                // PUTs -- and two NVS writes -- for one release.
+                onPointerUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+                onKeyUp={(e) =>
+                  void onBrightnessCommit(Number(e.currentTarget.value))
+                }
+              />
+            </label>
+          )}
           {shotUrl && (
             <label
               className="topbar-toggle"
@@ -1431,6 +1641,7 @@ export function App(): React.JSX.Element {
             </span>
           )}
           {helloErr && <span className="err">{helloErr}</span>}
+          {brightnessErr && <span className="err">{brightnessErr}</span>}
           {pushErr && <span className="err">{pushErr}</span>}
           {shotErr && <span className="err">{shotErr}</span>}
           {pushResult && (
@@ -1653,29 +1864,52 @@ export function App(): React.JSX.Element {
                 id
                 <input value={selected.id} readOnly />
               </label>
-              <label>
-                label
-                <input
-                  value={selected.label ?? ''}
-                  onChange={(e) =>
-                    updateWidget(selected.id, { label: e.target.value })
-                  }
-                />
-              </label>
-              {/* The voice widgets are panel-local: the device ignores a
-                  bind on them, so offering the field would only invite a
-                  path that silently does nothing. */}
-              {!PANEL_LOCAL_KINDS.has(selected.type) && (
+              {/* stream carries no label at all — the device's /hello field
+                  list doesn't advertise it, the firmware rejects it, and
+                  StreamWidget keeps it type-invalid. The !== check (not the
+                  Set) is what narrows the union for TypeScript. */}
+              {selected.type !== 'stream' && (
                 <label>
-                  bind (SK path)
+                  label
                   <input
-                    value={selected.bind ?? ''}
-                    onFocus={() => setBindTarget('widget')}
-                    onChange={(e) => applyBind(selected.id, e.target.value)}
+                    value={selected.label ?? ''}
+                    onChange={(e) =>
+                      updateWidget(selected.id, { label: e.target.value })
+                    }
                   />
                 </label>
               )}
-              {(selected.type === 'arc' || selected.type === 'bar') && (
+              {/* The voice widgets are panel-local: the device ignores a
+                  bind on them, so offering the field would only invite a
+                  path that silently does nothing. */}
+              {selected.type !== 'stream' &&
+                !PANEL_LOCAL_KINDS.has(selected.type) && (
+                  <label>
+                    bind (SK path)
+                    <input
+                      value={selected.bind ?? ''}
+                      onFocus={() => setBindTarget('widget')}
+                      onChange={(e) => applyBind(selected.id, e.target.value)}
+                    />
+                  </label>
+                )}
+              {selected.type === 'label' && (
+                <label>
+                  show description
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selected.show_description)}
+                    onChange={(e) =>
+                      updateWidget(selected.id, {
+                        show_description: e.target.checked || undefined
+                      })
+                    }
+                  />
+                </label>
+              )}
+              {(selected.type === 'arc' ||
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     min
@@ -1702,6 +1936,20 @@ export function App(): React.JSX.Element {
                     />
                   </label>
                 </>
+              )}
+              {selected.type === 'bar' && (
+                <label>
+                  vertical
+                  <input
+                    type="checkbox"
+                    checked={Boolean(selected.vertical)}
+                    onChange={(e) =>
+                      updateWidget(selected.id, {
+                        vertical: e.target.checked || undefined
+                      })
+                    }
+                  />
+                </label>
               )}
               {selected.type === 'arc' && (
                 <>
@@ -2106,10 +2354,82 @@ export function App(): React.JSX.Element {
                   </div>
                 </>
               )}
+              {selected.type === 'stream' && (
+                <>
+                  <label>
+                    host
+                    <input
+                      type="text"
+                      value={selected.host ?? ''}
+                      placeholder="(SignalK server)"
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          host: e.target.value || undefined
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={selected.port ?? 5004}
+                      onChange={(e) => {
+                        // max= only marks the input invalid; enforce the
+                        // range here so an out-of-range or fractional port
+                        // never reaches the serialized layout.
+                        const n = Number(e.target.value)
+                        if (!Number.isInteger(n) || n < 1 || n > 65535) return
+                        updateWidget(selected.id, {
+                          port: n !== 5004 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <label>
+                    forward touches
+                    <input
+                      type="checkbox"
+                      checked={selected.touch ?? true}
+                      onChange={(e) =>
+                        updateWidget(selected.id, {
+                          touch: e.target.checked ? undefined : false
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    touch port
+                    <input
+                      type="number"
+                      min={1}
+                      max={65535}
+                      value={selected.touch_port ?? 5005}
+                      onChange={(e) => {
+                        const n = Number(e.target.value)
+                        if (!Number.isInteger(n) || n < 1 || n > 65535) return
+                        updateWidget(selected.id, {
+                          touch_port: n !== 5005 ? n : undefined
+                        })
+                      }}
+                    />
+                  </label>
+                  <div className="muted small">
+                    Live MJPEG remote view captured on the SignalK box
+                    (signalk-esp32-stream); taps on the panel drive the captured
+                    page. Streams only while its screen is visible. Empty host
+                    follows the panel's SignalK server. Renders on the panel
+                    only — the preview shows a placeholder.
+                  </div>
+                </>
+              )}
               {(selected.type === 'label' ||
                 selected.type === 'value' ||
                 selected.type === 'arc' ||
-                selected.type === 'bar') && (
+                selected.type === 'bar' ||
+                selected.type === 'slider') && (
                 <>
                   <label>
                     unit
@@ -2338,38 +2658,13 @@ export function App(): React.JSX.Element {
               <GridLayout
                 className="grid"
                 layout={grid}
-                cols={COLS}
-                rowHeight={ROW_HEIGHT}
                 width={displayW}
-                // Force the grid container to fill the full canvas height
-                // (display minus the status overlay strip) so widgets can
-                // be dragged into the lower portion. Without this RGL
-                // auto-sizes to the lowest existing widget's row, which
-                // leaves no drop zone below.
+                // Keep the container at the height maxRows gives it rather
+                // than shrinking to the lowest widget (see gridConfig).
                 autoSize={false}
-                maxRows={Math.floor(
-                  (displayH -
-                    (statusOverlay ? STATUS_OVERLAY_HEIGHT : 0) -
-                    (showTabStrip ? tabStripHeight : 0)) /
-                    ROW_HEIGHT
-                )}
-                // RGL defaults margin=[10,10] and containerPadding=[10,10]
-                // which shift everything down by ~10-20px per widget — the
-                // canvas no longer reflects 1:1 with the device. Zero both
-                // so JSON pixel coords map directly to canvas pixels.
-                margin={[0, 0]}
-                containerPadding={[0, 0]}
-                // The designer must NOT auto-reflow: a drag of one
-                // widget should never displace another. allowOverlap lets
-                // tiles park anywhere; compactType=null disables gravity;
-                // preventCollision=true keeps RGL from pushing siblings.
-                compactType={null}
-                preventCollision={true}
-                allowOverlap={true}
-                // Drag only via the chrome bar (which only appears on
-                // selected widgets), so unselected widgets behave as
-                // pure click targets.
-                draggableHandle=".chrome"
+                gridConfig={gridConfig}
+                dragConfig={DRAG_CONFIG}
+                compactor={FREEFORM_COMPACTOR}
                 onDrag={onDragOrResize}
                 onResize={onDragOrResize}
                 onDragStop={onDragStop}

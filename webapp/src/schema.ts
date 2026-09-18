@@ -20,6 +20,8 @@ export type WidgetKind =
   | 'speaker'
   | 'mic'
   | 'volume'
+  | 'stream'
+  | 'slider'
 
 export interface DisplayConfig {
   unit?: string
@@ -56,6 +58,11 @@ export interface WidgetCommon {
 
 export interface LabelWidget extends WidgetCommon {
   type: 'label'
+  /** When bound, a label shows the formatted live value by default
+   *  (matching `value`). Set true to show the SK meta `description`
+   *  instead (e.g. a switch-state bind reads "BMS DnC" rather than
+   *  "1.0"). */
+  show_description?: boolean
 }
 
 /** Big-number readout tile. Always shows the formatted live value
@@ -229,6 +236,52 @@ export interface VolumeWidget extends WidgetCommon {
   type: 'volume'
 }
 
+/** Live MJPEG remote view: the SignalK box captures a webapp (Freeboard,
+ *  KIP, Grafana) with Xvfb + Chromium + ffmpeg (signalk-esp32-stream) and
+ *  the panel shows it, forwarding touches back — ACK-paced so at most one
+ *  frame is in flight. Streams only while its screen is visible. No
+ *  `bind`, no `label`/`display` (the device does not advertise them for
+ *  this kind and rejects unadvertised fields). Panel-only: the designer
+ *  preview substitutes a placeholder. Size it full-screen on its own
+ *  screen — the capture is panel-sized and frames are shown unscaled. */
+export interface StreamWidget {
+  // Deliberately NOT extending WidgetCommon: the device's /hello field
+  // list for stream has no label/bind/display and the firmware rejects
+  // unadvertised fields — keeping them type-invalid stops the generic
+  // inspector (and future code) from ever writing them onto this kind.
+  type: 'stream'
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+  /** Letterbox/background color; see WidgetCommon.bg_color. */
+  bg_color?: string
+  /** Status-caption color; see WidgetCommon.fg_color. */
+  fg_color?: string
+  /** Stream server; empty/omitted = the SignalK server the panel uses. */
+  host?: string
+  /** MJPEG TCP port (device default 5004). */
+  port?: number
+  /** Forward touches to the capture (device default true). */
+  touch?: boolean
+  /** UDP touch port (device default 5005). */
+  touch_port?: number
+}
+
+/** Draggable slider bound to a SignalK path, PUT on change — the `volume`
+ *  tile's look and feel, but for an arbitrary bound value instead of the
+ *  panel's own audio codec. `display.scale`/`offset` cover a path reported
+ *  as a 0-1 ratio rather than 0-100 (e.g. set `scale: 100` so the slider's
+ *  0-100 UI range maps onto the path's 0-1 range). */
+export interface SliderWidget extends WidgetCommon {
+  type: 'slider'
+  bind: string
+  min: number
+  max: number
+  display?: DisplayConfig
+}
+
 export type Widget =
   | LabelWidget
   | ValueWidget
@@ -244,6 +297,8 @@ export type Widget =
   | SpeakerWidget
   | MicWidget
   | VolumeWidget
+  | StreamWidget
+  | SliderWidget
 
 export interface Screen {
   id: string
