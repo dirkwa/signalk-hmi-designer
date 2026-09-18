@@ -1056,6 +1056,74 @@ export function App(): React.JSX.Element {
     })
   }
 
+  // Sub-bar counterpart of applyBind: bind the i-th bar of a bargroup
+  // and hydrate its zones, description and display defaults the same
+  // way, whether the path was picked from the list or typed.
+  const applyBarBind = (id: string, i: number, bind: string): void => {
+    setScreen((prev) => ({
+      ...prev,
+      widgets: prev.widgets.map((w) => {
+        if (w.id !== id || w.type !== 'bargroup') return w
+        return {
+          ...w,
+          bars: w.bars.map((b, j) => (j === i ? { ...b, bind } : b))
+        }
+      })
+    }))
+    if (!bind) return
+    const { skPath } = resolveBindPath(bind, paths)
+    void fetchPathMeta(skPath).then((meta) => {
+      if (!meta) return
+      if (meta.zones && meta.zones.length > 0) {
+        setPathZones((prev) => {
+          const next = new Map(prev)
+          next.set(bind, meta.zones!)
+          return next
+        })
+      }
+      if (meta.description) {
+        setPathDescriptions((prev) => {
+          const next = new Map(prev)
+          next.set(bind, meta.description!)
+          return next
+        })
+      }
+      // Only fills empty/default fields, never a user-set value.
+      const d = deriveDisplayDefaults(meta)
+      if (!d) return
+      setScreen((prev) => ({
+        ...prev,
+        widgets: prev.widgets.map((wid) => {
+          if (wid.id !== id || wid.type !== 'bargroup') return wid
+          const bars2 = wid.bars.map((b, j) => {
+            // The bind may have been retyped before the fetch resolved.
+            if (j !== i || b.bind !== bind) return b
+            const cur = b.display ?? {}
+            return {
+              ...b,
+              display: {
+                unit: cur.unit && cur.unit !== '' ? cur.unit : d.unit,
+                scale:
+                  cur.scale !== undefined && cur.scale !== 1
+                    ? cur.scale
+                    : d.scale,
+                offset:
+                  cur.offset !== undefined && cur.offset !== 0
+                    ? cur.offset
+                    : d.offset,
+                decimals:
+                  cur.decimals !== undefined && cur.decimals !== 1
+                    ? cur.decimals
+                    : d.decimals
+              }
+            }
+          })
+          return { ...wid, bars: bars2 }
+        })
+      }))
+    })
+  }
+
   /* ---- device discovery (mDNS, via the plugin) ---- */
 
   const [devices, setDevices] = useState<DiscoveredDevice[] | null>(null)
@@ -2175,11 +2243,9 @@ export function App(): React.JSX.Element {
                           placeholder="signalk.path"
                           title="bind (click in here, then click a path on the right)"
                           onFocus={() => setBindTarget({ barIdx: i })}
-                          onChange={(e) => {
-                            const next = [...selected.bars]
-                            next[i] = { ...b, bind: e.target.value }
-                            updateWidget(selected.id, { bars: next })
-                          }}
+                          onChange={(e) =>
+                            applyBarBind(selected.id, i, e.target.value)
+                          }
                         />
                         <NumberField
                           value={b.min}
@@ -2874,72 +2940,8 @@ export function App(): React.JSX.Element {
                   // user last focused: widget-level for most kinds,
                   // a specific sub-bar inside a bargroup.
                   if (bindTarget !== 'widget' && selected.type === 'bargroup') {
-                    const i = bindTarget.barIdx
-                    const target = selected.bars[i]
-                    if (target) {
-                      const next = [...selected.bars]
-                      next[i] = { ...target, bind: p }
-                      updateWidget(selected.id, { bars: next })
-                      // Pre-fetch meta so zone tinting + description
-                      // are live for the sub-bar's bound path too.
-                      // Also auto-fill the sub-bar's display block
-                      // from SK displayUnits — same conversion the
-                      // widget-level bind picker does for label/arc/
-                      // bar/button. Only fills empty/default fields,
-                      // never overwrites a user-set value.
-                      void fetchPathMeta(p).then((meta) => {
-                        if (!meta) return
-                        if (meta.zones && meta.zones.length > 0) {
-                          setPathZones((prev) => {
-                            const nextMap = new Map(prev)
-                            nextMap.set(p, meta.zones!)
-                            return nextMap
-                          })
-                        }
-                        if (meta.description) {
-                          setPathDescriptions((prev) => {
-                            const nextMap = new Map(prev)
-                            nextMap.set(p, meta.description!)
-                            return nextMap
-                          })
-                        }
-                        const d = deriveDisplayDefaults(meta)
-                        if (!d) return
-                        setScreen((prev) => ({
-                          ...prev,
-                          widgets: prev.widgets.map((wid) => {
-                            if (wid.id !== selected.id) return wid
-                            if (wid.type !== 'bargroup') return wid
-                            const bars2 = wid.bars.map((b, j) => {
-                              if (j !== i) return b
-                              const cur = b.display ?? {}
-                              return {
-                                ...b,
-                                display: {
-                                  unit:
-                                    cur.unit && cur.unit !== ''
-                                      ? cur.unit
-                                      : d.unit,
-                                  scale:
-                                    cur.scale !== undefined && cur.scale !== 1
-                                      ? cur.scale
-                                      : d.scale,
-                                  offset:
-                                    cur.offset !== undefined && cur.offset !== 0
-                                      ? cur.offset
-                                      : d.offset,
-                                  decimals:
-                                    cur.decimals !== undefined &&
-                                    cur.decimals !== 1
-                                      ? cur.decimals
-                                      : d.decimals
-                                }
-                              }
-                            })
-                            return { ...wid, bars: bars2 }
-                          })
-                        }))
-                      })
+                    if (selected.bars[bindTarget.barIdx]) {
+                      applyBarBind(selected.id, bindTarget.barIdx, p)
                       return
                     }
                   }
