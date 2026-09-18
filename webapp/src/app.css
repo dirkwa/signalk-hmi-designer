@@ -397,6 +397,16 @@ button.x { padding: 0 6px; font-size: 14px; }
   flex-direction: column;
   gap: 4px;
 }
+/* Secondary action inside a modal: the shape of a button, no fill. */
+button.ghost {
+  background: transparent;
+  border: 1px solid #30363d;
+  color: var(--muted);
+}
+button.ghost:hover {
+  color: var(--fg);
+}
+
 .modal-actions {
   display: flex;
   gap: 8px;
