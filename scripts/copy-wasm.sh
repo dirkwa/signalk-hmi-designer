@@ -20,7 +20,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_DEFAULT="${REPO_ROOT}/../espos-p4-cockpit-wasm/public"
 SRC="${JLP_WASM_DIR:-$SRC_DEFAULT}"
 DEST="${REPO_ROOT}/webapp/public/wasm"
-RAW_BASE="${JLP_WASM_URL:-https://raw.githubusercontent.com/dirkwa/espos-p4-cockpit-wasm/main/public}"
+RAW_BASE="${JLP_WASM_URL:-https://raw.githubusercontent.com/signalk-espOS/espos-p4-cockpit-wasm/main/public}"
 
 mkdir -p "${DEST}"
 

@@ -18,7 +18,7 @@ Install as a SignalK plugin; open the **espOS HMI Designer** webapp from the SK 
 
 The canvas always shows the device's render result, never an approximation. Two modes:
 
-- **WASM (default)** — the firmware's `widget_factory.cpp` compiled to WebAssembly via [espos-p4-cockpit-wasm](https://github.com/dirkwa/espos-p4-cockpit-wasm). Renders pixel-identically to what the device draws, offline, no panel needed. Live SK values flow into the WASM canvas so widget fills / values / zone colors update as you design.
+- **WASM (default)** — the firmware's `widget_factory.cpp` compiled to WebAssembly via [espos-p4-cockpit-wasm](https://github.com/signalk-espOS/espos-p4-cockpit-wasm). Renders pixel-identically to what the device draws, offline, no panel needed. Live SK values flow into the WASM canvas so widget fills / values / zone colors update as you design.
 - **Mirror** — when a device is connected, polls `/screenshot?fmt=jpeg` and renders the actual panel framebuffer. True WYSIWYG including any state the WASM can't simulate (notifications overlay, runtime artifacts).
 
 Toggle with the **WASM / Mirror** buttons above the canvas.
@@ -108,7 +108,7 @@ npm run dev          # vite at http://localhost:5173
 npm run build:all    # lint + tsc + vite build + vitest
 ```
 
-The WASM bundle is copied from a sibling [espos-p4-cockpit-wasm](https://github.com/dirkwa/espos-p4-cockpit-wasm) checkout via `scripts/copy-wasm.sh`. If that repo isn't present locally, WASM preview just won't load — Mirror mode still works.
+The WASM bundle is copied from a sibling [espos-p4-cockpit-wasm](https://github.com/signalk-espOS/espos-p4-cockpit-wasm) checkout via `scripts/copy-wasm.sh`. If that repo isn't present locally, WASM preview just won't load — Mirror mode still works.
 
 The plugin compiles to `plugin/`; the webapp to `public/`. Both are gitignored. The App Store icon is `icon.svg` at the repo root (the `signalk.appIcon` path); the Vite build emits a copy into `public/` for the webapp launcher tile.
 
