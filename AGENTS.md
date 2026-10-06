@@ -169,34 +169,18 @@ check — it's caught real bugs already.
 
 ## Licensing
 
-From **0.2.0** this project is source-available, not open source: use and
-modification are free, redistribution is not. `LICENSE.md` is authoritative.
+The project is licensed under the Apache License 2.0 (`LICENSE`), like the
+other signalk-espOS repositories, and `package.json` says `"license":
+"Apache-2.0"`. Contributions come in under the same licence (`CONTRIBUTING.md`).
 
-- **0.1.8 and earlier were Apache-2.0 and stay that way, permanently.**
-  Never rewrite history, retag old releases, or edit the license on an
-  existing tag. Apache-2.0's patent grant (§3) and redistribution rights
-  (§4) for those versions are irrevocable, and obscuring that weakens
-  the current license rather than strengthening it.
-- `LICENSE-APACHE-2.0-through-v0.1.8.txt` keeps that history
-  discoverable in the tarball. Do not delete it.
-- **Never propose returning to a permissive license** — that is the
-  copyright holder's decision alone.
-- `package.json` uses `"license": "SEE LICENSE IN LICENSE.md"`. This is
-  not an SPDX-listed license; inventing an identifier breaks tooling
-  validation.
-- `CONTRIBUTING.md` carries an inbound contribution grant. Without it,
-  merged contributions fragment ownership and make this kind of decision
-  impossible to take again.
-- The license text derives from a plain-language template whose authors
-  permit adaptation only if all mention of their project is removed. It
-  has been. Do not add attribution to them back in.
-- **Runtime dependency licenses gate this.** A copyleft or share-alike
-  runtime dependency would override the arrangement. The production tree
-  was audited at relicense time: 80 packages, all MIT/ISC/BSD/Apache-2.0.
-  Re-check before adding a runtime dependency — devDependencies do not
-  matter, since they are never distributed.
+- Releases 0.2.0 through 0.3.0-beta.2 shipped under a source-available
+  licence and 0.1.8 and earlier under Apache-2.0. Never rewrite history,
+  retag old releases, or edit the licence on an existing tag.
+- Runtime dependency licences still gate additions: `dependencies` and
+  everything Vite bundles into `public/` ship to users. Re-check before
+  adding a runtime dependency; devDependencies are never distributed.
 - `signalk-derived-data` is a **peer** dependency (Apache-2.0), installed
-  by the user rather than bundled, so it imposes no constraint here.
+  by the user rather than bundled.
 
 ## Repo conventions
 

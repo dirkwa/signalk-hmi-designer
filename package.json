@@ -11,7 +11,7 @@
     },
     "./package.json": "./package.json"
   },
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/signalk-espOS/signalk-hmi-designer.git"
@@ -50,8 +50,7 @@
     "icon.svg",
     "plugin/**/*",
     "public/**/*",
-    "LICENSE.md",
-    "LICENSE-APACHE-2.0-through-v0.1.8.txt"
+    "LICENSE"
   ],
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx,html}\"",
