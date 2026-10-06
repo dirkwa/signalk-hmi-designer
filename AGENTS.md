@@ -177,8 +177,9 @@ other signalk-espOS repositories, and `package.json` says `"license":
   licence and 0.1.8 and earlier under Apache-2.0. Never rewrite history,
   retag old releases, or edit the licence on an existing tag.
 - Runtime dependency licences still gate additions: `dependencies` and
-  everything Vite bundles into `public/` ship to users. Re-check before
-  adding a runtime dependency; devDependencies are never distributed.
+  everything Vite bundles into `public/` ship to users, so a
+  devDependency the webapp imports (React, for one) is distributed too.
+  Re-check licences before adding either kind.
 - `signalk-derived-data` is a **peer** dependency (Apache-2.0), installed
   by the user rather than bundled.
 
