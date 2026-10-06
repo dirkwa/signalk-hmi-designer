@@ -11,6 +11,8 @@ interface DiscoveredDevice {
   txt: Record<string, string>
 }
 
+// The npm package was renamed to signalk-espos-hmi-designer; the plugin id
+// stays so existing installs keep their saved layout and settings.
 const PLUGIN_ID = 'signalk-hmi-designer'
 const LAYOUT_FILE = 'layout.json'
 

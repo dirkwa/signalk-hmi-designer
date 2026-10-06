@@ -50,7 +50,7 @@ const loadModule = async (
   modulePromise = (async () => {
     // Vite copies /public/wasm/* into the build output verbatim. At
     // runtime the file sits next to index.html (when served by the
-    // signalk-server plugin) under /plugins/signalk-hmi-designer/wasm/.
+    // signalk-server) under /signalk-espos-hmi-designer/wasm/.
     // The base path is derived from the document so it works both in
     // `npm run dev` and in production.
     const base =
