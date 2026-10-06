@@ -1,4 +1,6 @@
-# signalk-hmi-designer
+# espOS HMI Designer
+
+npm package: `signalk-espos-hmi-designer` (formerly `signalk-hmi-designer`).
 
 A SignalK webapp that designs HMI layouts for **runtime-rendering display devices** — boards that load a JSON layout at runtime and bind widgets to SignalK paths, without a firmware rebuild per change.
 
@@ -6,7 +8,7 @@ Reference target: [sensesp-p4-cockpit](https://github.com/dirkwa/sensesp-p4-cock
 
 ## What it does
 
-Install as a SignalK plugin; open the **HMI Designer** webapp from the SK admin UI:
+Install as a SignalK plugin; open the **espOS HMI Designer** webapp from the SK admin UI:
 
 1. **Connect** to a device URL. The designer GETs `/hello` to learn the widget catalog, display size, advertised capabilities (screenshot formats, idle-timeout support, ...) and the currently-active layout name.
 2. **Drag widgets** onto a canvas sized to the device's display. Bind each to a SignalK path picked from the live path list on this server. A bind may also reach into an object-valued path by appending the field name, e.g. `navigation.position.latitude`: the designer subscribes to `navigation.position`, reads `latitude` from each update and takes zones and units from the parent path's metadata. This resolves in the designer preview only. The panel firmware subscribes to binds as literal SignalK paths and cannot read a field inside an object value, so Push refuses a layout that contains such a bind until the firmware supports it.
@@ -16,7 +18,7 @@ Install as a SignalK plugin; open the **HMI Designer** webapp from the SK admin 
 
 The canvas always shows the device's render result, never an approximation. Two modes:
 
-- **WASM (default)** — the firmware's `widget_factory.cpp` compiled to WebAssembly via [espos-p4-cockpit-wasm](https://github.com/dirkwa/espos-p4-cockpit-wasm). Renders pixel-identically to what the device draws, offline, no panel needed. Live SK values flow into the WASM canvas so widget fills / values / zone colors update as you design.
+- **WASM (default)** — the firmware's `widget_factory.cpp` compiled to WebAssembly via [espos-p4-cockpit-wasm](https://github.com/signalk-espOS/espos-p4-cockpit-wasm). Renders pixel-identically to what the device draws, offline, no panel needed. Live SK values flow into the WASM canvas so widget fills / values / zone colors update as you design.
 - **Mirror** — when a device is connected, polls `/screenshot?fmt=jpeg` and renders the actual panel framebuffer. True WYSIWYG including any state the WASM can't simulate (notifications overlay, runtime artifacts).
 
 Toggle with the **WASM / Mirror** buttons above the canvas.
@@ -106,7 +108,7 @@ npm run dev          # vite at http://localhost:5173
 npm run build:all    # lint + tsc + vite build + vitest
 ```
 
-The WASM bundle is copied from a sibling [espos-p4-cockpit-wasm](https://github.com/dirkwa/espos-p4-cockpit-wasm) checkout via `scripts/copy-wasm.sh`. If that repo isn't present locally, WASM preview just won't load — Mirror mode still works.
+The WASM bundle is copied from a sibling [espos-p4-cockpit-wasm](https://github.com/signalk-espOS/espos-p4-cockpit-wasm) checkout via `scripts/copy-wasm.sh`. If that repo isn't present locally, WASM preview just won't load — Mirror mode still works.
 
 The plugin compiles to `plugin/`; the webapp to `public/`. Both are gitignored. The App Store icon is `icon.svg` at the repo root (the `signalk.appIcon` path); the Vite build emits a copy into `public/` for the webapp launcher tile.
 
@@ -121,15 +123,7 @@ v0.2 — daily-usable for layout iteration against the reference firmware. Open 
 
 ## License
 
-signalk-hmi-designer 0.2.0 and later is **source available, not open source**.
-See [LICENSE.md](LICENSE.md).
+Apache-2.0, see [LICENSE](LICENSE).
 
-**You may**, free of charge: run it on your own boat or fleet, private or
-commercial; use it for internal company operations; modify it for your own use;
-use it in education and research; and provide professional services around it.
-
-**You may not**: redistribute it, or publish a modified version of it to npm or
-anywhere else. Verbatim copies of official releases may be mirrored and cached.
-
-Versions 0.1.8 and earlier remain available under the Apache License 2.0 — see
-[LICENSE-APACHE-2.0-through-v0.1.8.txt](LICENSE-APACHE-2.0-through-v0.1.8.txt).
+Releases 0.2.0 through 0.3.0-beta.2 were published under a source-available
+licence; 0.1.8 and earlier were Apache-2.0.

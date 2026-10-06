@@ -1,5 +1,5 @@
 {
-  "name": "signalk-hmi-designer",
+  "name": "signalk-espos-hmi-designer",
   "version": "0.3.0-beta.2",
   "description": "SignalK webapp that designs HMI layouts (JSON) for runtime-rendering display devices",
   "main": "plugin/index.js",
@@ -11,15 +11,15 @@
     },
     "./package.json": "./package.json"
   },
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dirkwa/signalk-hmi-designer.git"
+    "url": "git+https://github.com/signalk-espOS/signalk-hmi-designer.git"
   },
   "bugs": {
-    "url": "https://github.com/dirkwa/signalk-hmi-designer/issues"
+    "url": "https://github.com/signalk-espOS/signalk-hmi-designer/issues"
   },
-  "homepage": "https://github.com/dirkwa/signalk-hmi-designer#readme",
+  "homepage": "https://github.com/signalk-espOS/signalk-hmi-designer#readme",
   "engines": {
     "node": ">=22.5.0",
     "signalk": ">=2.24.0"
@@ -28,16 +28,17 @@
     "signalk-node-server-plugin",
     "signalk-webapp",
     "signalk-category-utility",
+    "espos",
     "hmi",
     "designer",
     "dashboard"
   ],
   "signalk-plugin-enabled-by-default": true,
   "signalk": {
-    "displayName": "HMI Designer",
+    "displayName": "espOS HMI Designer",
     "appIcon": "icon.svg",
     "webapp": {
-      "name": "HMI Designer",
+      "name": "espOS HMI Designer",
       "description": "Drag-and-drop layout designer for runtime-rendering HMI displays"
     },
     "recommends": [
@@ -49,8 +50,7 @@
     "icon.svg",
     "plugin/**/*",
     "public/**/*",
-    "LICENSE.md",
-    "LICENSE-APACHE-2.0-through-v0.1.8.txt"
+    "LICENSE"
   ],
   "scripts": {
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"webapp/**/*.{ts,tsx,html}\"",

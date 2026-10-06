@@ -6,14 +6,15 @@ import { readFileSync } from 'node:fs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-const pkgVersion = (
-  JSON.parse(readFileSync(resolve(here, 'package.json'), 'utf-8')) as { version: string }
-).version
+const pkg = JSON.parse(readFileSync(resolve(here, 'package.json'), 'utf-8')) as {
+  name: string
+  version: string
+}
 
 // package.json's signalk.appIcon points at icon.svg, and SignalK reads
 // it from two places: the App Store fetches it from the tarball root
 // (unpkg.com/<pkg>@<version>/icon.svg) while the webapp launcher tile
-// loads it from the mounted public/ dir (/signalk-hmi-designer/icon.svg).
+// loads it from the mounted public/ dir (/signalk-espos-hmi-designer/icon.svg).
 // Keep the one tracked copy at the repo root and emit it into the
 // bundle, so the two never drift apart.
 function appIcon(): Plugin {
@@ -42,15 +43,15 @@ function appIcon(): Plugin {
   }
 }
 
-// SignalK mounts the built webapp at /signalk-hmi-designer/. Setting
+// SignalK mounts the built webapp at /<package name>/. Setting
 // `base` makes Vite emit asset URLs with that prefix so they resolve
 // correctly behind the SK reverse proxy.
 export default defineConfig({
   plugins: [react(), appIcon()],
   define: {
-    __PLUGIN_VERSION__: JSON.stringify(pkgVersion)
+    __PLUGIN_VERSION__: JSON.stringify(pkg.version)
   },
-  base: '/signalk-hmi-designer/',
+  base: `/${pkg.name}/`,
   root: resolve(here, 'webapp'),
   build: {
     outDir: resolve(here, 'public'),
