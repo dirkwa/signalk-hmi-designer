@@ -14,12 +14,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/signalk-espOS/signalk-hmi-designer.git"
+    "url": "git+https://github.com/signalk-espOS/signalk-espos-hmi-designer.git"
   },
   "bugs": {
-    "url": "https://github.com/signalk-espOS/signalk-hmi-designer/issues"
+    "url": "https://github.com/signalk-espOS/signalk-espos-hmi-designer/issues"
   },
-  "homepage": "https://github.com/signalk-espOS/signalk-hmi-designer#readme",
+  "homepage": "https://github.com/signalk-espOS/signalk-espos-hmi-designer#readme",
   "engines": {
     "node": ">=22.5.0",
     "signalk": ">=2.24.0"
